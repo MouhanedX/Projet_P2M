@@ -74,20 +74,44 @@ function Dashboard() {
 
   useEffect(() => {
     loadInitialData();
-    
-    const alarmSub = websocketService.subscribe('/topic/alarms', (alarm) => {
-      console.log('New alarm received:', alarm);
-      setAlarms(prev => [alarm, ...prev].slice(0, 50));
-      loadAlarmStatistics();
-      setWsConnected(true);
-    });
 
-    const kpiSub = websocketService.subscribe('/topic/kpis', (newKpi) => {
-      console.log('New KPI received:', newKpi);
-      setKpi(newKpi);
-      setLastUpdate(new Date());
-      setWsConnected(true);
-    });
+    let alarmSub = null;
+    let kpiSub = null;
+
+    const subscribeToTopics = () => {
+      if (alarmSub) {
+        alarmSub.unsubscribe();
+        alarmSub = null;
+      }
+      if (kpiSub) {
+        kpiSub.unsubscribe();
+        kpiSub = null;
+      }
+
+      alarmSub = websocketService.subscribe('/topic/alarms', (alarm) => {
+        console.log('New alarm received:', alarm);
+        setAlarms(prev => [alarm, ...prev].slice(0, 50));
+        loadAlarmStatistics();
+        setWsConnected(true);
+      });
+
+      kpiSub = websocketService.subscribe('/topic/kpis', (newKpi) => {
+        console.log('New KPI received:', newKpi);
+        setKpi(newKpi);
+        setLastUpdate(new Date());
+        setWsConnected(true);
+      });
+    };
+
+    websocketService.connect(
+      () => {
+        setWsConnected(true);
+        subscribeToTopics();
+      },
+      () => {
+        setWsConnected(false);
+      }
+    );
 
     const interval = setInterval(() => {
       console.log('Auto-refresh triggered (2 minutes)');
@@ -97,11 +121,13 @@ function Dashboard() {
       loadRoutes();
       loadRtuStatus();
       loadRecentTests();
+      setWsConnected(websocketService.isConnected());
     }, 120000);
 
     return () => {
       if (alarmSub) alarmSub.unsubscribe();
       if (kpiSub) kpiSub.unsubscribe();
+      websocketService.disconnect();
       clearInterval(interval);
     };
   }, []);
@@ -134,10 +160,8 @@ function Dashboard() {
         alarms: response.data.metrics.totalAlarmsActive
       }]);
       setLastUpdate(new Date());
-      setWsConnected(websocketService.isConnected());
     } catch (error) {
       console.error('Error loading KPI data:', error);
-      setWsConnected(false);
     }
   };
 

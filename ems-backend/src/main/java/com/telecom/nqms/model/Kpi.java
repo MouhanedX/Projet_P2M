@@ -11,7 +11,6 @@ import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.CompoundIndexes;
 
 import java.time.Instant;
-import java.util.Map;
 
 @Data
 @Builder

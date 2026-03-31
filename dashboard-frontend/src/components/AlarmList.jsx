@@ -1,8 +1,50 @@
 import { formatDistanceToNow } from 'date-fns';
-import { AlertCircle, CheckCircle, Clock, RefreshCw } from 'lucide-react';
+import { AlertCircle, CheckCircle } from 'lucide-react';
 import { alarmsAPI } from '../services/api';
 import { useState } from 'react';
 import clsx from 'clsx';
+
+const parseTimestamp = (value) => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === 'number') {
+    const millis = value < 100000000000 ? value * 1000 : value;
+    const date = new Date(millis);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    if (!Number.isNaN(Number(trimmed))) {
+      return parseTimestamp(Number(trimmed));
+    }
+
+    const normalized = /[zZ]|[+-]\d{2}:\d{2}$/.test(trimmed) ? trimmed : `${trimmed}Z`;
+    const date = new Date(normalized);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  if (typeof value === 'object') {
+    if (typeof value.epochSecond === 'number') {
+      const nanos = typeof value.nano === 'number' ? value.nano : 0;
+      const millis = (value.epochSecond * 1000) + Math.floor(nanos / 1000000);
+      const date = new Date(millis);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(value, '$date')) {
+      return parseTimestamp(value.$date);
+    }
+  }
+
+  return null;
+};
 
 function AlarmList({ alarms, onRefresh }) {
   const [processing, setProcessing] = useState(null);
@@ -21,29 +63,17 @@ function AlarmList({ alarms, onRefresh }) {
     switch (status) {
       case 'RESOLVED':
         return <CheckCircle className="w-5 h-5 text-green-500" />;
-      case 'ACKNOWLEDGED':
-        return <Clock className="w-5 h-5 text-yellow-500" />;
       default:
         return <AlertCircle className="w-5 h-5 text-red-500" />;
     }
   };
 
-  const handleAcknowledge = async (alarmId) => {
-    setProcessing(alarmId);
-    try {
-      await alarmsAPI.acknowledge(alarmId, {
-        acknowledgedBy: 'operator',
-        notes: 'Acknowledged from dashboard'
-      });
-      if (onRefresh) onRefresh();
-    } catch (error) {
-      console.error('Error acknowledging alarm:', error);
-    } finally {
-      setProcessing(null);
-    }
-  };
-
   const handleResolve = async (alarmId) => {
+    if (!alarmId) {
+      console.warn('Cannot resolve alarm without an identifier');
+      return;
+    }
+
     setProcessing(alarmId);
     try {
       await alarmsAPI.resolve(alarmId, {
@@ -97,51 +127,52 @@ function AlarmList({ alarms, onRefresh }) {
           </tr>
         </thead>
         <tbody className="bg-white divide-y divide-gray-200">
-          {alarms.map((alarm) => (
-            <tr key={alarm.alarmId || alarm.id} className="hover:bg-gray-50">
-              <td className="px-6 py-4 whitespace-nowrap">
-                {getStatusIcon(alarm.status)}
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap">
-                <span className={clsx('badge', getSeverityBadge(alarm.severity))}>
-                  {alarm.severity}
-                </span>
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                {alarm.routeId}
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                {alarm.alarmType}
-              </td>
-              <td className="px-6 py-4 text-sm text-gray-900 max-w-md truncate">
-                {alarm.description}
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                {alarm.lifecycle?.createdAt && 
-                  formatDistanceToNow(new Date(alarm.lifecycle.createdAt), { addSuffix: true })}
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm space-x-2">
-                {alarm.status === 'ACTIVE' && !alarm.lifecycle?.acknowledged && (
-                  <button
-                    onClick={() => handleAcknowledge(alarm.alarmId)}
-                    disabled={processing === alarm.alarmId}
-                    className="text-blue-600 hover:text-blue-800 font-medium disabled:opacity-50"
-                  >
-                    {processing === alarm.alarmId ? 'Processing...' : 'Acknowledge'}
-                  </button>
-                )}
-                {(alarm.status === 'ACTIVE' || alarm.status === 'ACKNOWLEDGED') && (
-                  <button
-                    onClick={() => handleResolve(alarm.alarmId)}
-                    disabled={processing === alarm.alarmId}
-                    className="text-green-600 hover:text-green-800 font-medium disabled:opacity-50"
-                  >
-                    {processing === alarm.alarmId ? 'Processing...' : 'Resolve'}
-                  </button>
-                )}
-              </td>
-            </tr>
-          ))}
+          {alarms.map((alarm) => {
+            const alarmIdentifier = alarm.alarmId || alarm.alarm_id || alarm.id;
+            const routeId = alarm.routeId || alarm.route_id || '-';
+            const alarmType = alarm.alarmType || alarm.alarm_type || '-';
+            const createdAtValue = alarm.lifecycle?.createdAt ?? alarm.lifecycle?.created_at ?? alarm.updatedAt ?? alarm.updated_at;
+            const createdAtDate = parseTimestamp(createdAtValue);
+
+            return (
+              <tr key={alarmIdentifier || alarm.id} className="hover:bg-gray-50">
+                <td className="px-6 py-4 whitespace-nowrap">
+                  {getStatusIcon(alarm.status)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <span className={clsx('badge', getSeverityBadge(alarm.severity))}>
+                    {alarm.severity}
+                  </span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  {routeId}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {alarmType}
+                </td>
+                <td className="px-6 py-4 text-sm text-gray-900 max-w-md truncate">
+                  {alarm.description}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {createdAtDate ? formatDistanceToNow(createdAtDate, { addSuffix: true }) : '-'}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm space-x-2">
+                  {alarm.status === 'ACTIVE' && (
+                    <button
+                      onClick={() => handleResolve(alarmIdentifier)}
+                      disabled={!alarmIdentifier || processing === alarmIdentifier}
+                      className="px-3 py-1 text-green-600 hover:text-green-800 hover:bg-green-50 font-medium disabled:opacity-50 rounded border border-green-300 hover:border-green-500"
+                    >
+                      {processing === alarmIdentifier ? 'Processing...' : 'Resolve'}
+                    </button>
+                  )}
+                  {alarm.status === 'RESOLVED' && (
+                    <span className="px-3 py-1 text-green-600 font-medium">✓ Resolved</span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

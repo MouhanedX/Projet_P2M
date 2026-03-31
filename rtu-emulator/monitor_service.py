@@ -8,6 +8,7 @@ from otdr_simulator import OTDRSimulator
 from alarm_service import AlarmService
 from ems_client import EMSClient
 from mongodb_service import MongoDBService
+from kpi_service import KpiService
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,7 @@ class MonitorService:
         self.alarm_service = AlarmService(rtu_id)
         self.ems_client = EMSClient()
         self.db_service = MongoDBService(settings.mongodb_uri)
+        self.kpi_service = KpiService(self.db_service)
         
         self.is_running = False
         self.routes: Dict[str, RouteInfo] = {}
@@ -30,6 +32,7 @@ class MonitorService:
         self.temperature_c = 34.5
         self.power_supply = "Normal"
         self.otdr_availability = "Ready"
+        self.kpi_send_counter = 0  # Track KPI sending frequency
         
         # Initialize routes
         self._initialize_routes()
@@ -107,6 +110,11 @@ class MonitorService:
             try:
                 # Test all routes
                 await self.test_all_routes()
+                
+                # Generate and send KPIs periodically (every 5th iteration)
+                self.kpi_send_counter += 1
+                if self.kpi_send_counter % 5 == 0:
+                    await self._generate_and_send_kpis()
                 
                 # Wait for next interval
                 await asyncio.sleep(settings.monitoring_interval)
@@ -198,6 +206,12 @@ class MonitorService:
                 f"{alarm.alarm_type.value} ({alarm.severity.value})"
             )
             
+            # Convert alarm to dict for storage
+            alarm_dict = alarm.model_dump(mode='json')
+            
+            # Store alarm in MongoDB
+            self.db_service.insert_alarm(alarm_dict)
+            
             # Send alarm to EMS
             success = await self.ems_client.send_alarm(alarm)
             
@@ -215,20 +229,20 @@ class MonitorService:
     
     def _select_fault_scenario(self) -> str:
         """
-        Randomly select a fault scenario for simulation.
+        Randomly select a fault scenario for simulation - increased fault injection for alarms every minute.
         
         Returns:
             Scenario type: 'normal', 'degradation', 'break', 'high_loss_splice'
         """
-        # Probability distribution (increased for testing)
-        # 50% normal, 30% degradation, 12% break, 8% high loss splice
+        # Probability distribution (increased to ensure alarms every minute)
+        # 40% normal, 30% degradation, 18% break, 12% high loss splice
         rand = random.random()
         
-        if rand < 0.50:
+        if rand < 0.40:
             return "normal"
-        elif rand < 0.80:
+        elif rand < 0.70:
             return "degradation"
-        elif rand < 0.92:
+        elif rand < 0.88:
             return "break"
         else:
             return "high_loss_splice"
@@ -267,3 +281,63 @@ class MonitorService:
         if route_id not in self.routes:
             raise ValueError(f"Unknown route: {route_id}")
         return self.routes[route_id]
+    
+    async def _generate_and_send_kpis(self):
+        """Generate and send KPIs to EMS."""
+        try:
+            logger.info("Generating KPIs...")
+            
+            # Generate network health KPI
+            network_kpi = await self.kpi_service.calculate_network_health_kpi()
+            if network_kpi:
+                # Store in local database
+                self.db_service.insert_kpi(network_kpi.model_dump(mode='json'))
+                # Send to EMS
+                success = await self.ems_client.send_kpi(network_kpi)
+                if success:
+                    logger.info(f"Network health KPI {network_kpi.kpi_id} sent to EMS")
+                else:
+                    logger.warning(f"Failed to send network health KPI {network_kpi.kpi_id}")
+            
+            # Generate and send route-specific KPIs
+            for route_id in list(self.routes.keys()):
+                try:
+                    route_kpi = await self.kpi_service.calculate_route_performance_kpi(route_id)
+                    if route_kpi:
+                        # Store in local database
+                        self.db_service.insert_kpi(route_kpi.model_dump(mode='json'))
+                        # Send to EMS
+                        success = await self.ems_client.send_kpi(route_kpi)
+                        if success:
+                            logger.debug(f"Route KPI {route_kpi.kpi_id} for {route_id} sent to EMS")
+                        else:
+                            logger.warning(f"Failed to send route KPI {route_kpi.kpi_id}")
+                except Exception as e:
+                    logger.error(f"Error generating KPI for route {route_id}: {e}")
+            
+            # Generate alarm statistics KPI
+            alarm_kpi = await self.kpi_service.calculate_alarm_statistics_kpi()
+            if alarm_kpi:
+                # Store in local database
+                self.db_service.insert_kpi(alarm_kpi.model_dump(mode='json'))
+                # Send to EMS
+                success = await self.ems_client.send_kpi(alarm_kpi)
+                if success:
+                    logger.info(f"Alarm statistics KPI {alarm_kpi.kpi_id} sent to EMS")
+                else:
+                    logger.warning(f"Failed to send alarm statistics KPI {alarm_kpi.kpi_id}")
+            
+            # Generate availability KPI
+            availability_kpi = await self.kpi_service.calculate_availability_kpi(self.rtu_id)
+            if availability_kpi:
+                # Store in local database
+                self.db_service.insert_kpi(availability_kpi.model_dump(mode='json'))
+                # Send to EMS
+                success = await self.ems_client.send_kpi(availability_kpi)
+                if success:
+                    logger.info(f"Availability KPI {availability_kpi.kpi_id} sent to EMS")
+                else:
+                    logger.warning(f"Failed to send availability KPI {availability_kpi.kpi_id}")
+        
+        except Exception as e:
+            logger.error(f"Error generating and sending KPIs: {e}")

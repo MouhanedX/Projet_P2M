@@ -15,7 +15,6 @@ import org.springframework.data.mongodb.core.index.CompoundIndexes;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 
 @Data
 @Builder
@@ -57,6 +56,7 @@ public class Alarm {
     
     private AlarmDetails details;
     
+    @JsonAlias("trace_data")
     private TraceData traceData;
     
     private ImpactInfo impact;
@@ -76,9 +76,13 @@ public class Alarm {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class AlarmDetails {
+        @JsonAlias("total_loss_db")
         private Double totalLossDb;
+        @JsonAlias("event_location_km")
         private Double eventLocationKm;
+        @JsonAlias("event_type")
         private String eventType;
+        @JsonAlias("deviation_from_baseline_db")
         private Double deviationFromBaselineDb;
     }
     
@@ -87,8 +91,11 @@ public class Alarm {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class TraceData {
+        @JsonAlias("trace_id")
         private String traceId;
+        @JsonAlias("fiber_length_km")
         private Double fiberLengthKm;
+        @JsonAlias("measurement_duration_ms")
         private Integer measurementDurationMs;
         private List<OtdrEvent> events;
     }
@@ -99,8 +106,11 @@ public class Alarm {
     @AllArgsConstructor
     public static class OtdrEvent {
         private String type;
+        @JsonAlias("distance_km")
         private Double distanceKm;
+        @JsonAlias("loss_db")
         private Double lossDb;
+        @JsonAlias("reflection_db")
         private Double reflectionDb;
     }
     
@@ -109,8 +119,11 @@ public class Alarm {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class ImpactInfo {
+        @JsonAlias("affected_services")
         private List<String> affectedServices;
+        @JsonAlias("estimated_affected_users")
         private Integer estimatedAffectedUsers;
+        @JsonAlias("service_impact")
         private ServiceImpact serviceImpact;
     }
     
@@ -120,15 +133,22 @@ public class Alarm {
     @AllArgsConstructor
     public static class Lifecycle {
         @CreatedDate
+        @JsonAlias("created_at")
         private Instant createdAt;
         private Boolean acknowledged;
+        @JsonAlias("acknowledged_at")
         private Instant acknowledgedAt;
+        @JsonAlias("acknowledged_by")
         private String acknowledgedBy;
         private Boolean resolved;
+        @JsonAlias("resolved_at")
         private Instant resolvedAt;
+        @JsonAlias("resolved_by")
         private String resolvedBy;
+        @JsonAlias("resolution_notes")
         private String resolutionNotes;
         private Boolean escalated;
+        @JsonAlias("escalation_level")
         private Integer escalationLevel;
     }
     
@@ -137,9 +157,13 @@ public class Alarm {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class NotificationInfo {
+        @JsonAlias("email_sent")
         private Boolean emailSent;
+        @JsonAlias("sms_sent")
         private Boolean smsSent;
+        @JsonAlias("webhook_sent")
         private Boolean webhookSent;
+        @JsonAlias("notification_attempts")
         private Integer notificationAttempts;
     }
     

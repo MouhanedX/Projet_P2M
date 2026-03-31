@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     ems_connection_timeout: int = 10
     
     # Monitoring Configuration
-    monitoring_interval: int = 300  # seconds
+    monitoring_interval: int = 60  # seconds - alarms every minute
     auto_start: bool = True
     
     # Routes (legacy - used if use_database_rtu=False)
@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     alarm_threshold_degradation: float = 3.0
     alarm_threshold_break: float = 10.0
     event_loss_threshold: float = 1.0
+    # Duplicate alarm suppression window (seconds)
+    alarm_duplicate_suppression_seconds: int = 60
     
     # OTDR Simulation Parameters
     fiber_attenuation: float = 0.2  # dB/km

@@ -74,19 +74,6 @@ public class AlarmController {
         return ResponseEntity.ok(alarms);
     }
     
-    @PostMapping("/{alarmId}/acknowledge")
-    @Operation(summary = "Acknowledge an alarm")
-    public ResponseEntity<Alarm> acknowledgeAlarm(
-            @PathVariable String alarmId,
-            @RequestBody Map<String, String> request) {
-        
-        String acknowledgedBy = request.getOrDefault("acknowledgedBy", "system");
-        String notes = request.getOrDefault("notes", "");
-        
-        Alarm alarm = alarmService.acknowledgeAlarm(alarmId, acknowledgedBy, notes);
-        return ResponseEntity.ok(alarm);
-    }
-    
     @PostMapping("/{alarmId}/resolve")
     @Operation(summary = "Resolve an alarm")
     public ResponseEntity<Alarm> resolveAlarm(

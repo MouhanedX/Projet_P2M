@@ -59,6 +59,8 @@ services:
     environment:
       # MongoDB Atlas connection string - REPLACE WITH YOUR ACTUAL URI
       SPRING_DATA_MONGODB_URI: ${MONGODB_URI:-mongodb://localhost:27017/nqms}
+      # Also expose MONGODB_URI env var so other services/scripts can use it
+      MONGODB_URI: ${MONGODB_URI:-mongodb://localhost:27017/nqms}
       SPRING_DATA_MONGODB_DATABASE: nqms
       SERVER_PORT: 8080
       SPRING_APPLICATION_NAME: nqms-ems-backend

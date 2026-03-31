@@ -3,7 +3,7 @@ import asyncio
 import logging
 from datetime import timezone
 from typing import Optional
-from models import Alarm, OTDRTestReport
+from models import Alarm, OTDRTestReport, Kpi
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -157,3 +157,55 @@ class EMSClient:
         except Exception as e:
             logger.debug(f"Failed to send test report: {str(e)}")
             return False
+    
+    async def send_kpi(self, kpi: Kpi) -> bool:
+        """
+        Send KPI to EMS.
+        
+        Args:
+            kpi: KPI object to send
+        
+        Returns:
+            True if successfully sent, False otherwise
+        """
+        endpoint = f"{self.ems_url}/api/kpis"
+        
+        for attempt in range(self.max_retries):
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    kpi_dict = kpi.model_dump(mode='json')
+                    response = await client.post(endpoint, json=kpi_dict)
+                    
+                    if response.status_code in [200, 201]:
+                        logger.info(
+                            f"KPI {kpi.kpi_id} sent successfully to EMS "
+                            f"(attempt {attempt + 1}/{self.max_retries})"
+                        )
+                        return True
+                    else:
+                        logger.warning(
+                            f"EMS returned status {response.status_code} "
+                            f"for KPI {kpi.kpi_id}"
+                        )
+            
+            except httpx.ConnectError:
+                logger.error(
+                    f"Failed to connect to EMS at {endpoint} "
+                    f"(attempt {attempt + 1}/{self.max_retries})"
+                )
+            except httpx.TimeoutException:
+                logger.error(
+                    f"Timeout connecting to EMS "
+                    f"(attempt {attempt + 1}/{self.max_retries})"
+                )
+            except Exception as e:
+                logger.error(
+                    f"Error sending KPI to EMS: {str(e)} "
+                    f"(attempt {attempt + 1}/{self.max_retries})"
+                )
+            
+            if attempt < self.max_retries - 1:
+                await asyncio.sleep(self.retry_delay)
+        
+        logger.error(f"Failed to send KPI {kpi.kpi_id} after {self.max_retries} attempts")
+        return False

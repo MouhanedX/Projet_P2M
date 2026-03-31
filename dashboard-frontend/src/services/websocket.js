@@ -1,6 +1,7 @@
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 
+// Use HTTP(S) URL for SockJS endpoint by default (SockJS expects http/https)
 const WS_URL = import.meta.env.VITE_WS_URL || 'http://localhost:8080/ws';
 
 class WebSocketService {
@@ -37,6 +38,12 @@ class WebSocketService {
       onWebSocketClose: () => {
         console.log('WebSocket closed');
         this.connected = false;
+        if (onError) onError(new Error('WebSocket closed'));
+      },
+      onWebSocketError: (event) => {
+        console.error('WebSocket transport error:', event);
+        this.connected = false;
+        if (onError) onError(event);
       }
     });
 
@@ -55,6 +62,16 @@ class WebSocketService {
     if (!this.client || !this.connected) {
       console.error('WebSocket not connected');
       return null;
+    }
+
+    const existing = this.subscriptions.get(topic);
+    if (existing) {
+      try {
+        existing.unsubscribe();
+      } catch (error) {
+        console.warn(`Failed to unsubscribe existing topic ${topic}:`, error);
+      }
+      this.subscriptions.delete(topic);
     }
 
     const subscription = this.client.subscribe(topic, (message) => {

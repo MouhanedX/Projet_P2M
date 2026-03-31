@@ -111,6 +111,7 @@ public class Rtu {
     }
     
     public enum RtuStatus {
-        ONLINE, OFFLINE, MAINTENANCE, ERROR
+        ONLINE, OFFLINE, MAINTENANCE, ERROR,
+        ACTIVE, INACTIVE
     }
 }

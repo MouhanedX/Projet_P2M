@@ -73,6 +73,7 @@ public class AlarmService {
      */
     public Alarm getAlarmById(String alarmId) {
         return alarmRepository.findByAlarmId(alarmId)
+                .or(() -> alarmRepository.findById(alarmId))
                 .orElseThrow(() -> new RuntimeException("Alarm not found: " + alarmId));
     }
     
@@ -102,54 +103,48 @@ public class AlarmService {
     }
     
     /**
-     * Acknowledge alarm
-     */
-    @Transactional
-    public Alarm acknowledgeAlarm(String alarmId, String acknowledgedBy, String notes) {
-        Alarm alarm = getAlarmById(alarmId);
-        
-        if (alarm.getLifecycle().getAcknowledged()) {
-            throw new RuntimeException("Alarm already acknowledged");
-        }
-        
-        alarm.getLifecycle().setAcknowledged(true);
-        alarm.getLifecycle().setAcknowledgedAt(Instant.now());
-        alarm.getLifecycle().setAcknowledgedBy(acknowledgedBy);
-        alarm.setStatus(Alarm.AlarmStatus.ACKNOWLEDGED);
-        
-        Alarm updated = alarmRepository.save(alarm);
-        sendAlarmNotification(updated);
-        
-        log.info("Alarm acknowledged: {} by {}", alarmId, acknowledgedBy);
-        return updated;
-    }
-    
-    /**
      * Resolve alarm
      */
     @Transactional
     public Alarm resolveAlarm(String alarmId, String resolvedBy, String resolutionNotes) {
-        Alarm alarm = getAlarmById(alarmId);
-        
-        if (alarm.getLifecycle().getResolved()) {
-            throw new RuntimeException("Alarm already resolved");
+        try {
+            Alarm alarm = getAlarmById(alarmId);
+            
+            if (alarm.getLifecycle() != null && alarm.getLifecycle().getResolved()) {
+                throw new RuntimeException("Alarm already resolved");
+            }
+            
+            // Initialize lifecycle if null
+            if (alarm.getLifecycle() == null) {
+                alarm.setLifecycle(Alarm.Lifecycle.builder()
+                        .createdAt(Instant.now())
+                        .build());
+            }
+            
+            alarm.getLifecycle().setResolved(true);
+            alarm.getLifecycle().setResolvedAt(Instant.now());
+            alarm.getLifecycle().setResolvedBy(resolvedBy);
+            alarm.getLifecycle().setResolutionNotes(resolutionNotes);
+            alarm.setStatus(Alarm.AlarmStatus.RESOLVED);
+            
+            Alarm updated = alarmRepository.save(alarm);
+            
+            // Update route alarm count (wrapped in try-catch to not break main flow)
+            try {
+                updateRouteAlarmCount(alarm.getRouteId());
+                updateRouteStatusFromAlarm(updated);
+            } catch (Exception e) {
+                log.warn("Failed to update route status after resolve: {}", e.getMessage());
+            }
+            
+            sendAlarmNotification(updated);
+            
+            log.info("Alarm resolved: {} by {}", alarmId, resolvedBy);
+            return updated;
+        } catch (Exception e) {
+            log.error("Error resolving alarm {}: {}", alarmId, e.getMessage(), e);
+            throw e;
         }
-        
-        alarm.getLifecycle().setResolved(true);
-        alarm.getLifecycle().setResolvedAt(Instant.now());
-        alarm.getLifecycle().setResolvedBy(resolvedBy);
-        alarm.getLifecycle().setResolutionNotes(resolutionNotes);
-        alarm.setStatus(Alarm.AlarmStatus.RESOLVED);
-        
-        Alarm updated = alarmRepository.save(alarm);
-        
-        // Update route alarm count
-        updateRouteAlarmCount(alarm.getRouteId());
-        
-        sendAlarmNotification(updated);
-        
-        log.info("Alarm resolved: {} by {}", alarmId, resolvedBy);
-        return updated;
     }
     
     /**
@@ -172,7 +167,6 @@ public class AlarmService {
     public AlarmStatistics getAlarmStatistics() {
         long total = alarmRepository.count();
         long active = alarmRepository.countByStatus(Alarm.AlarmStatus.ACTIVE);
-        long acknowledged = alarmRepository.countByStatus(Alarm.AlarmStatus.ACKNOWLEDGED);
         long resolved = alarmRepository.countByStatus(Alarm.AlarmStatus.RESOLVED);
         
         long critical = alarmRepository.countByStatusAndSeverity(Alarm.AlarmStatus.ACTIVE, Alarm.AlarmSeverity.CRITICAL);
@@ -187,7 +181,6 @@ public class AlarmService {
         return AlarmStatistics.builder()
                 .totalAlarms(total)
                 .activeAlarms(active)
-                .acknowledgedAlarms(acknowledged)
                 .resolvedAlarms(resolved)
                 .criticalAlarms(critical)
                 .highAlarms(high)
@@ -304,7 +297,6 @@ public class AlarmService {
     public static class AlarmStatistics {
         private Long totalAlarms;
         private Long activeAlarms;
-        private Long acknowledgedAlarms;
         private Long resolvedAlarms;
         private Long criticalAlarms;
         private Long highAlarms;

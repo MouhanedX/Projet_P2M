@@ -288,6 +288,67 @@ async def get_config():
     }
 
 
+@app.get("/api/kpis")
+async def get_latest_kpis():
+    """Get latest KPIs from database."""
+    try:
+        if not db_service:
+            raise HTTPException(status_code=503, detail="Database service not initialized")
+        
+        # Fetch latest KPIs
+        with db_service.get_connection() as db:
+            kpis = list(db.kpis.find({}).sort("timestamp", -1).limit(50) or [])
+        return {"kpis": kpis, "count": len(kpis)}
+    except Exception as e:
+        logger.error(f"Error retrieving KPIs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/rtu/{rtu_id}/kpis")
+async def get_rtu_kpis(rtu_id: str):
+    """Get KPIs for a specific RTU."""
+    try:
+        if not db_service:
+            raise HTTPException(status_code=503, detail="Database service not initialized")
+        
+        if rtu_id not in monitor_services:
+            raise HTTPException(status_code=404, detail=f"RTU {rtu_id} not found")
+        
+        # Fetch RTU-specific KPIs
+        with db_service.get_connection() as db:
+            kpis = list(db.kpis.find({
+                "$or": [
+                    {"scope.rtu_id": rtu_id},
+                    {"scope.type": "GLOBAL"}
+                ]
+            }).sort("timestamp", -1).limit(50) or [])
+        
+        return {"rtu_id": rtu_id, "kpis": kpis, "count": len(kpis)}
+    except Exception as e:
+        logger.error(f"Error retrieving KPIs for RTU {rtu_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/routes/{route_id}/kpis")
+async def get_route_kpis(route_id: str):
+    """Get KPIs for a specific route."""
+    try:
+        if not db_service:
+            raise HTTPException(status_code=503, detail="Database service not initialized")
+        
+        # Fetch route-specific KPIs
+        with db_service.get_connection() as db:
+            kpis = list(db.kpis.find({
+                "scope.rtu_id": route_id,
+                "kpi_type": "ROUTE_PERFORMANCE"
+            }).sort("timestamp", -1).limit(50) or [])
+        
+        return {"route_id": route_id, "kpis": kpis, "count": len(kpis)}
+    except Exception as e:
+        logger.error(f"Error retrieving KPIs for route {route_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8001, log_level="info")

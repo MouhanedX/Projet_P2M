@@ -1,11 +1,53 @@
 import { formatDistanceToNow } from 'date-fns';
-import { AlertCircle, CheckCircle, Clock, TrendingUp } from 'lucide-react';
+import { AlertCircle, CheckCircle, Clock } from 'lucide-react';
 import clsx from 'clsx';
 
+const parseTimestamp = (value) => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === 'number') {
+    const millis = value < 100000000000 ? value * 1000 : value;
+    const date = new Date(millis);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    if (!Number.isNaN(Number(trimmed))) {
+      return parseTimestamp(Number(trimmed));
+    }
+
+    const normalized = /[zZ]|[+-]\d{2}:\d{2}$/.test(trimmed) ? trimmed : `${trimmed}Z`;
+    const date = new Date(normalized);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  if (typeof value === 'object' && typeof value.epochSecond === 'number') {
+    const nanos = typeof value.nano === 'number' ? value.nano : 0;
+    const millis = (value.epochSecond * 1000) + Math.floor(nanos / 1000000);
+    const date = new Date(millis);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  return null;
+};
+
 function AlarmTimeline({ alarms }) {
-  const sortedAlarms = [...alarms].sort((a, b) => 
-    new Date(b.lifecycle?.createdAt) - new Date(a.lifecycle?.createdAt)
-  ).slice(0, 10);
+  const sortedAlarms = [...alarms]
+    .sort((a, b) => {
+      const aDate = parseTimestamp(a.lifecycle?.createdAt ?? a.lifecycle?.created_at ?? a.updatedAt ?? a.updated_at);
+      const bDate = parseTimestamp(b.lifecycle?.createdAt ?? b.lifecycle?.created_at ?? b.updatedAt ?? b.updated_at);
+      const aTime = aDate ? aDate.getTime() : 0;
+      const bTime = bDate ? bDate.getTime() : 0;
+      return bTime - aTime;
+    })
+    .slice(0, 10);
 
   const getSeverityColor = (severity) => {
     const colors = {
@@ -44,7 +86,7 @@ function AlarmTimeline({ alarms }) {
       
       <div className="space-y-4">
         {sortedAlarms.map((alarm, index) => (
-          <div key={alarm.alarmId || index} className="relative pl-12">
+          <div key={alarm.alarmId || alarm.alarm_id || alarm.id || index} className="relative pl-12">
             {/* Timeline dot */}
             <div className={clsx(
               'absolute left-2.5 w-3 h-3 rounded-full border-2 border-white',
@@ -74,8 +116,10 @@ function AlarmTimeline({ alarms }) {
                     <span className="flex items-center space-x-1">
                       <Clock className="w-3 h-3" />
                       <span>
-                        {alarm.lifecycle?.createdAt && 
-                          formatDistanceToNow(new Date(alarm.lifecycle.createdAt), { addSuffix: true })}
+                        {(() => {
+                          const createdAt = parseTimestamp(alarm.lifecycle?.createdAt ?? alarm.lifecycle?.created_at ?? alarm.updatedAt ?? alarm.updated_at);
+                          return createdAt ? formatDistanceToNow(createdAt, { addSuffix: true }) : '-';
+                        })()}
                       </span>
                     </span>
                     {alarm.alarmType && (

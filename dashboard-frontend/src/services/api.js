@@ -37,7 +37,6 @@ export const alarmsAPI = {
   getById: (id) => emsApi.get(`/alarms/${id}`),
   getByRoute: (routeId) => emsApi.get(`/alarms/route/${routeId}`),
   getByRtu: (rtuId) => emsApi.get(`/alarms/rtu/${rtuId}`),
-  acknowledge: (id, data) => emsApi.post(`/alarms/${id}/acknowledge`, data),
   resolve: (id, data) => emsApi.post(`/alarms/${id}/resolve`, data),
   getStatistics: () => emsApi.get('/alarms/statistics')
 };

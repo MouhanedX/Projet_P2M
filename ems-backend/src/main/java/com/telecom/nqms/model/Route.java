@@ -30,7 +30,7 @@ public class Route {
     @Id
     private String id;
     
-    @Indexed(unique = true)
+    @Indexed(name = "routeId", unique = true)
     private String routeId;
     
     private String routeName;
@@ -150,7 +150,8 @@ public class Route {
     
     // Enums
     public enum RouteStatus {
-        NORMAL, DEGRADATION, BREAK, UNKNOWN, MAINTENANCE
+        NORMAL, DEGRADATION, BREAK, UNKNOWN, MAINTENANCE,
+        ACTIVE, INACTIVE, DEGRADED, BROKEN
     }
     
     public enum Priority {

@@ -89,31 +89,238 @@ class AlarmSeverity(str, Enum):
     CRITICAL = "CRITICAL"
 
 
-class Alarm(BaseModel):
-    """Alarm generated from OTDR analysis."""
-    alarm_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    rtu_id: str
-    route_id: str
+class AlarmStatus(str, Enum):
+    """Status of an alarm."""
+    ACTIVE = "ACTIVE"
+    ACKNOWLEDGED = "ACKNOWLEDGED"
+    RESOLVED = "RESOLVED"
+    CLEARED = "CLEARED"
+    SUPPRESSED = "SUPPRESSED"
+
+
+class ServiceImpact(str, Enum):
+    """Service impact level."""
+    NONE = "NONE"
+    MINOR = "MINOR"
+    MODERATE = "MODERATE"
+    MAJOR = "MAJOR"
+    FULL_OUTAGE = "FULL_OUTAGE"
+
+
+class KpiType(str, Enum):
+    """Types of KPIs."""
+    NETWORK_HEALTH = "NETWORK_HEALTH"
+    ROUTE_PERFORMANCE = "ROUTE_PERFORMANCE"
+    ALARM_STATISTICS = "ALARM_STATISTICS"
+    RTU_PERFORMANCE = "RTU_PERFORMANCE"
+    AVAILABILITY_METRICS = "AVAILABILITY_METRICS"
+
+
+class KpiPeriod(str, Enum):
+    """KPI periods."""
+    REALTIME = "REALTIME"
+    HOURLY = "HOURLY"
+    DAILY = "DAILY"
+    WEEKLY = "WEEKLY"
+    MONTHLY = "MONTHLY"
+
+
+class KpiScopeType(str, Enum):
+    """KPI scope types."""
+    GLOBAL = "GLOBAL"
+    REGIONAL = "REGIONAL"
+    RTU = "RTU"
+    ROUTE = "ROUTE"
+
+
+class KpiScope(BaseModel):
+    """KPI scope information."""
+    type: KpiScopeType
+    region: Optional[str] = None
+    rtu_id: Optional[str] = None
+
+
+class KpiMetrics(BaseModel):
+    """KPI metrics."""
+    total_routes: int = 0
+    routes_normal: int = 0
+    routes_degraded: int = 0
+    routes_broken: int = 0
+    network_availability_percent: float = 99.9
+    total_alarms_active: int = 0
+    critical_alarms: int = 0
+    high_alarms: int = 0
+    medium_alarms: int = 0
+    low_alarms: int = 0
+
+
+class KpiPerformance(BaseModel):
+    """KPI performance metrics."""
+    avg_fiber_loss_db: float = 0.0
+    max_fiber_loss_db: float = 0.0
+    total_events_detected: int = 0
+    unusual_events: int = 0
+
+
+class KpiAvailability(BaseModel):
+    """KPI availability metrics."""
+    uptime_percent: float = 99.9
+    mttr_hours: float = 1.0
+    mtbf_hours: float = 720.0
+    sla_compliance_percent: float = 99.9
+
+
+class KpiTrend(BaseModel):
+    """KPI trend information."""
+    hour_over_hour_change_percent: float = 0.0
+    day_over_day_change_percent: float = 0.0
+    week_over_week_change_percent: float = 0.0
+
+
+class Kpi(BaseModel):
+    """Network KPI matching Java model exactly."""
+    kpi_id: str = Field(default_factory=lambda: f"kpi-{str(uuid.uuid4())[:8]}")
+    kpi_type: KpiType
+    period: KpiPeriod
     timestamp: datetime = Field(default_factory=datetime.now)
-    alarm_type: AlarmType
-    severity: AlarmSeverity
-    description: str
-    total_loss_db: float
-    trace_data: Optional[OTDRTrace] = None
-    acknowledged: bool = False
+    scope: Optional[KpiScope] = None
+    metrics: Optional[KpiMetrics] = None
+    performance: Optional[KpiPerformance] = None
+    availability: Optional[KpiAvailability] = None
+    trend: Optional[KpiTrend] = None
+    calculated_at: datetime = Field(default_factory=datetime.now)
     
     class Config:
         json_schema_extra = {
             "example": {
-                "alarm_id": "alarm-123",
-                "rtu_id": "RTU_01",
-                "route_id": "OR_1",
-                "timestamp": "2026-02-17T10:30:00",
+                "kpi_id": "kpi-12345678",
+                "kpi_type": "NETWORK_HEALTH",
+                "period": "REALTIME",
+                "timestamp": "2026-03-30T19:31:00",
+                "scope": {
+                    "type": "GLOBAL",
+                    "region": "All"
+                },
+                "metrics": {
+                    "total_routes": 15,
+                    "routes_normal": 12,
+                    "routes_degraded": 2,
+                    "routes_broken": 1,
+                    "network_availability_percent": 93.3,
+                    "total_alarms_active": 3,
+                    "critical_alarms": 1,
+                    "high_alarms": 2
+                }
+            }
+        }
+    
+    def model_dump(self, **kwargs):
+        """Override model_dump to ensure kpi_id is always set."""
+        data = super().model_dump(**kwargs)
+        # Ensure kpi_id is never None
+        if not data.get('kpi_id'):
+            data['kpi_id'] = f"kpi-{str(uuid.uuid4())[:8]}"
+        return data
+
+
+class AlarmDetails(BaseModel):
+    """Detailed alarm information."""
+    total_loss_db: Optional[float] = None
+    event_location_km: Optional[float] = None
+    event_type: Optional[str] = None
+    deviation_from_baseline_db: Optional[float] = None
+
+
+class OtdrEvent(BaseModel):
+    """OTDR event details."""
+    type: str
+    distance_km: float
+    loss_db: float
+    reflection_db: Optional[float] = None
+
+
+class TraceData(BaseModel):
+    """Complete trace data."""
+    trace_id: str
+    fiber_length_km: float
+    measurement_duration_ms: int
+    events: List[OtdrEvent] = []
+
+
+class ImpactInfo(BaseModel):
+    """Impact information."""
+    affected_services: List[str] = []
+    estimated_affected_users: Optional[int] = None
+    service_impact: ServiceImpact = ServiceImpact.NONE
+
+
+class Lifecycle(BaseModel):
+    """Alarm lifecycle information."""
+    created_at: datetime = Field(default_factory=datetime.now)
+    acknowledged: bool = False
+    acknowledged_at: Optional[datetime] = None
+    acknowledged_by: Optional[str] = None
+    resolved: bool = False
+    resolved_at: Optional[datetime] = None
+    resolved_by: Optional[str] = None
+    resolution_notes: Optional[str] = None
+    escalated: bool = False
+    escalation_level: Optional[int] = None
+
+
+class NotificationInfo(BaseModel):
+    """Notification delivery information."""
+    email_sent: bool = False
+    sms_sent: bool = False
+    webhook_sent: bool = False
+    notification_attempts: int = 0
+
+
+class Alarm(BaseModel):
+    """Alarm generated from OTDR analysis - matches Java model exactly."""
+    alarm_id: str = Field(default_factory=lambda: f"alarm-{str(uuid.uuid4())[:8]}")
+    rtu_id: str
+    route_id: str
+    alarm_type: AlarmType
+    severity: AlarmSeverity
+    status: AlarmStatus = AlarmStatus.ACTIVE
+    description: str
+    details: Optional[AlarmDetails] = None
+    trace_data: Optional[TraceData] = None
+    impact: Optional[ImpactInfo] = None
+    lifecycle: Optional[Lifecycle] = None
+    notifications: Optional[NotificationInfo] = None
+    tags: List[str] = []
+    updated_at: datetime = Field(default_factory=datetime.now)
+    
+    def model_dump(self, **kwargs):
+        """Override model_dump to ensure alarm_id is always set."""
+        data = super().model_dump(**kwargs)
+        # Ensure alarm_id is never None
+        if not data.get('alarm_id'):
+            data['alarm_id'] = f"alarm-{str(uuid.uuid4())[:8]}"
+        return data
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "alarm_id": "alarm-12345678",
+                "rtu_id": "RTU_TN_01",
+                "route_id": "RTU_TN_01_R1",
                 "alarm_type": "FIBER_BREAK",
                 "severity": "CRITICAL",
+                "status": "ACTIVE",
                 "description": "Fiber break detected at 20.1 km with 18.5 dB loss",
-                "total_loss_db": 18.5,
-                "acknowledged": False
+                "details": {
+                    "total_loss_db": 18.5,
+                    "event_location_km": 20.1,
+                    "event_type": "break",
+                    "deviation_from_baseline_db": 12.0
+                },
+                "lifecycle": {
+                    "created_at": "2026-02-17T10:30:00",
+                    "acknowledged": False
+                }
             }
         }
 

@@ -90,3 +90,31 @@ class MongoDBService:
         except Exception as e:
             logger.error(f"Error fetching routes: {e}")
             return []
+    
+    def insert_alarm(self, alarm_dict: Dict) -> bool:
+        """Insert an alarm into the alarms collection."""
+        try:
+            with self.get_connection() as db:
+                alarm_collection = db["alarms"]
+                
+                # Ensure alarmId is unique
+                result = alarm_collection.insert_one(alarm_dict)
+                
+                logger.info(f"Alarm inserted successfully: {alarm_dict.get('alarmId')}")
+                return True
+        except Exception as e:
+            logger.error(f"Error inserting alarm: {e}")
+            return False
+    
+    def insert_kpi(self, kpi_dict: Dict) -> bool:
+        """Insert a KPI into the kpis collection."""
+        try:
+            with self.get_connection() as db:
+                kpi_collection = db["kpis"]
+                result = kpi_collection.insert_one(kpi_dict)
+                
+                logger.info(f"KPI inserted successfully: {kpi_dict.get('kpi_id')}")
+                return True
+        except Exception as e:
+            logger.error(f"Error inserting KPI: {e}")
+            return False
