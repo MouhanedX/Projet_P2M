@@ -19,6 +19,8 @@ public interface AlarmRepository extends MongoRepository<Alarm, String> {
     List<Alarm> findByRtuId(String rtuId);
     
     List<Alarm> findByRouteId(String routeId);
+
+    List<Alarm> findByRouteIdOrderByLifecycleCreatedAtDesc(String routeId);
     
     Page<Alarm> findByStatus(Alarm.AlarmStatus status, Pageable pageable);
     
@@ -50,4 +52,7 @@ public interface AlarmRepository extends MongoRepository<Alarm, String> {
 
     @Query("{'lifecycle.createdAt': {$gte: ?0}}")
     List<Alarm> findCreatedSince(Instant since);
+
+    @Query("{'status': 'ACTIVE', 'lifecycle.assignedToTechnician': true, 'lifecycle.autoResolveAt': {$lte: ?0}}")
+    List<Alarm> findDueAutoResolvableAlarms(Instant now);
 }

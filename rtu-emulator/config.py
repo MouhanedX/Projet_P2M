@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     
     # Monitoring Configuration
     monitoring_interval: int = 60  # seconds - alarms every minute
-    auto_start: bool = True
+    auto_start: bool = False
     auto_fault_generation: bool = False  # If False, alarms are only raised via manual test interface
     
     # Routes (legacy - used if use_database_rtu=False)

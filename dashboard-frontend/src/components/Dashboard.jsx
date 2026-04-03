@@ -5,7 +5,7 @@ import websocketService from '../services/websocket';
 import KpiCard from './KpiCard';
 import AlarmList from './AlarmList';
 import NetworkStatusChart from './NetworkStatusChart';
-import { AlertCircle, Activity, TrendingUp, Router, Wifi, WifiOff, ShieldCheck, GaugeCircle, Radar, ExternalLink } from 'lucide-react';
+import { AlertCircle, Activity, Router, Wifi, WifiOff, ShieldCheck, GaugeCircle, Radar, ExternalLink, History, X } from 'lucide-react';
 
 const STANDALONE_TOPOLOGY = {
   central: {
@@ -57,6 +57,33 @@ const STANDALONE_TOPOLOGY = {
   }
 };
 
+const parseTimestamp = (value) => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === 'number') {
+    const millis = value < 100000000000 ? value * 1000 : value;
+    const date = new Date(millis);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = /[zZ]|[+-]\d{2}:\d{2}$/.test(value) ? value : `${value}Z`;
+    const date = new Date(normalized);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  if (typeof value === 'object' && typeof value.epochSecond === 'number') {
+    const nanos = typeof value.nano === 'number' ? value.nano : 0;
+    const millis = (value.epochSecond * 1000) + Math.floor(nanos / 1000000);
+    const date = new Date(millis);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  return null;
+};
+
 function Dashboard() {
   const navigate = useNavigate();
   const [kpi, setKpi] = useState(null);
@@ -70,6 +97,9 @@ function Dashboard() {
   const [selectedRtuId, setSelectedRtuId] = useState('');
   const [selectedRtuDetails, setSelectedRtuDetails] = useState(null);
   const [recentTests, setRecentTests] = useState([]);
+  const [selectedRouteHistory, setSelectedRouteHistory] = useState(null);
+  const [routeHistoryAlarms, setRouteHistoryAlarms] = useState([]);
+  const [routeHistoryLoading, setRouteHistoryLoading] = useState(false);
 
   useEffect(() => {
     loadInitialData();
@@ -244,6 +274,27 @@ function Dashboard() {
     }
   };
 
+  const openRouteHistory = async (route) => {
+    setSelectedRouteHistory(route);
+    setRouteHistoryLoading(true);
+    setRouteHistoryAlarms([]);
+    try {
+      const response = await alarmsAPI.getByRoute(route.routeId);
+      setRouteHistoryAlarms(Array.isArray(response.data) ? response.data : []);
+    } catch (error) {
+      console.error(`Error loading alarm history for route ${route.routeId}:`, error);
+      setRouteHistoryAlarms([]);
+    } finally {
+      setRouteHistoryLoading(false);
+    }
+  };
+
+  const closeRouteHistory = () => {
+    setSelectedRouteHistory(null);
+    setRouteHistoryAlarms([]);
+    setRouteHistoryLoading(false);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50">
@@ -265,12 +316,9 @@ function Dashboard() {
     backboneKm: STANDALONE_TOPOLOGY.backboneByRtu[rtu.id] || 0
   }));
   const totalStandaloneRoutes = Object.values(STANDALONE_TOPOLOGY.routesByRtu).reduce((sum, list) => sum + list.length, 0);
-  const onlineRtusCount = rtus.filter((item) => item.ems_connected).length;
-  const monitoredRtusCount = rtus.filter((item) => item.is_monitoring).length;
   const averageRtuTemperature = rtus.length > 0
     ? rtus.reduce((sum, item) => sum + (item.temperature_c || 0), 0) / rtus.length
     : 0;
-  const totalRtuActiveAlarms = rtus.reduce((sum, item) => sum + (item.active_alarms || 0), 0);
   const selectedRtuSummary = rtus.find((item) => item.rtu_id === selectedRtuId) || null;
   const fallbackSelectedRoutes = routes
     .filter((item) => item.rtuId === selectedRtuId)
@@ -337,7 +385,7 @@ function Dashboard() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <KpiCard
             title="Network Availability"
             value={kpi?.metrics?.networkAvailabilityPercent || 0}
@@ -352,6 +400,7 @@ function Dashboard() {
             icon={<AlertCircle className="w-6 h-6" />}
             subtitle={`${kpi?.metrics?.criticalAlarms || 0} critical`}
             color={kpi?.metrics?.criticalAlarms > 0 ? 'red' : 'yellow'}
+            isInteger={true}
           />
           <KpiCard
             title="Total Routes"
@@ -359,42 +408,19 @@ function Dashboard() {
             icon={<Router className="w-6 h-6" />}
             subtitle={`${kpi?.metrics?.routesNormal || 0} normal`}
             color="blue"
-          />
-          <KpiCard
-            title="Avg Fiber Loss"
-            value={kpi?.performance?.avgFiberLossDb || 0}
-            unit="dB"
-            icon={<TrendingUp className="w-6 h-6" />}
-            subtitle={`Max: ${kpi?.performance?.maxFiberLossDb?.toFixed(2) || 0} dB`}
-            color="yellow"
+            isInteger={true}
           />
         </div>
 
         {activeView === 'noc' && (
           <>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
-              <div className="card bg-gradient-to-br from-emerald-50 to-green-100">
-                <p className="text-xs font-semibold text-slate-600">RTU Status</p>
-                <p className="mt-2 text-2xl font-bold text-emerald-700">{onlineRtusCount}/{rtus.length} Online</p>
-              </div>
-              <div className="card bg-gradient-to-br from-cyan-50 to-sky-100">
-                <p className="text-xs font-semibold text-slate-600">Monitoring</p>
-                <p className="mt-2 text-2xl font-bold text-sky-700">{monitoredRtusCount}/{rtus.length} Running</p>
-              </div>
+            <div className="grid grid-cols-1 gap-4">
               <div className="card bg-gradient-to-br from-amber-50 to-orange-100">
                 <p className="text-xs font-semibold text-slate-600">Avg Temperature</p>
                 <p className="mt-2 text-2xl font-bold text-orange-700">{averageRtuTemperature.toFixed(1)}°C</p>
                 <div className="mt-3 h-2 w-full rounded-full bg-orange-200">
                   <div className="h-2 rounded-full bg-orange-500" style={{ width: `${Math.min(100, Math.max(5, (averageRtuTemperature / 70) * 100))}%` }} />
                 </div>
-              </div>
-              <div className="card bg-gradient-to-br from-violet-50 to-purple-100">
-                <p className="text-xs font-semibold text-slate-600">RTU Alarms</p>
-                <p className="mt-2 text-2xl font-bold text-purple-700">{totalRtuActiveAlarms}</p>
-              </div>
-              <div className="card bg-gradient-to-br from-blue-50 to-indigo-100">
-                <p className="text-xs font-semibold text-slate-600">Managed RTUs</p>
-                <p className="mt-2 text-2xl font-bold text-indigo-700">{rtus.length}</p>
               </div>
             </div>
 
@@ -433,18 +459,99 @@ function Dashboard() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                   {routes.map((route) => (
-                    <div key={route.routeId} className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-indigo-50 p-4 shadow-sm">
+                    <button
+                      type="button"
+                      key={route.routeId}
+                      onClick={() => openRouteHistory(route)}
+                      className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-indigo-50 p-4 shadow-sm text-left transition-all hover:shadow-md hover:border-indigo-300"
+                    >
                       <p className="text-xs font-semibold text-indigo-600">{route.routeId}</p>
                       <p className="text-sm font-bold text-slate-900 mt-1">{route.routeName}</p>
                       <p className="text-xs text-slate-500 mt-1">{route.region} • {route?.fiberSpec?.lengthKm ?? '-'} km</p>
-                      <div className="mt-3 inline-flex rounded-full bg-slate-900/5 px-2.5 py-1 text-xs font-medium text-slate-700">
-                        Status: {route.status}
+                      <div className="mt-3 flex items-center justify-between gap-2">
+                        <span className="inline-flex rounded-full bg-slate-900/5 px-2.5 py-1 text-xs font-medium text-slate-700">
+                          Status: {route.status}
+                        </span>
+                        <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-semibold text-indigo-700">
+                          <History className="w-3 h-3" /> History
+                        </span>
                       </div>
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}
             </div>
+
+            {selectedRouteHistory && (
+              <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+                <div className="w-full max-w-6xl max-h-[85vh] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                  <div className="border-b border-slate-200 px-5 py-4 flex items-center justify-between">
+                    <div>
+                      <h4 className="text-lg font-bold text-slate-900">Route Alarm History</h4>
+                      <p className="text-sm text-slate-600 mt-1">
+                        {selectedRouteHistory.routeId} • {selectedRouteHistory.routeName} • {selectedRouteHistory.rtuId}
+                      </p>
+                    </div>
+                    <button
+                      onClick={closeRouteHistory}
+                      className="rounded-lg border border-slate-300 px-3 py-1.5 text-slate-700 hover:bg-slate-100 inline-flex items-center gap-1"
+                    >
+                      <X className="w-4 h-4" /> Close
+                    </button>
+                  </div>
+
+                  <div className="px-5 py-4 overflow-auto max-h-[70vh]">
+                    {routeHistoryLoading ? (
+                      <p className="text-sm text-slate-600">Loading alarm history...</p>
+                    ) : routeHistoryAlarms.length === 0 ? (
+                      <p className="text-sm text-slate-600">No alarms found for this route.</p>
+                    ) : (
+                      <table className="min-w-full text-sm">
+                        <thead>
+                          <tr className="text-left text-slate-500 border-b border-slate-200">
+                            <th className="pb-2 pr-4">Status</th>
+                            <th className="pb-2 pr-4">Type</th>
+                            <th className="pb-2 pr-4">Cause</th>
+                            <th className="pb-2 pr-4">Location</th>
+                            <th className="pb-2 pr-4">Attenuation</th>
+                            <th className="pb-2 pr-4">Start Time</th>
+                            <th className="pb-2 pr-4">End Time</th>
+                            <th className="pb-2">Technician</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {routeHistoryAlarms.map((alarm) => {
+                            const lifecycle = alarm.lifecycle || {};
+                            const details = alarm.details || {};
+                            const start = parseTimestamp(lifecycle.createdAt || lifecycle.created_at);
+                            const end = parseTimestamp(lifecycle.resolvedAt || lifecycle.resolved_at);
+
+                            return (
+                              <tr key={alarm.alarmId || alarm.alarm_id || alarm.id} className="border-b border-slate-100">
+                                <td className="py-2 pr-4">
+                                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${alarm.status === 'RESOLVED' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                                    {alarm.status}
+                                  </span>
+                                </td>
+                                <td className="py-2 pr-4 text-slate-700">{alarm.alarmType || alarm.alarm_type || '-'}</td>
+                                <td className="py-2 pr-4 text-slate-700">{details.faultCause || details.fault_cause || details.eventType || details.event_type || '-'}</td>
+                                <td className="py-2 pr-4 text-slate-700">{details.faultLocationDescription || details.fault_location_description || details.eventLocationKm || details.event_location_km || '-'}</td>
+                                <td className="py-2 pr-4 text-slate-700">
+                                  {details.attenuationDb ?? details.attenuation_db ?? details.totalLossDb ?? details.total_loss_db ?? '-'}
+                                </td>
+                                <td className="py-2 pr-4 text-slate-600">{start ? start.toLocaleString() : '-'}</td>
+                                <td className="py-2 pr-4 text-slate-600">{end ? end.toLocaleString() : '-'}</td>
+                                <td className="py-2 text-slate-700">{lifecycle.assignedBy || lifecycle.assigned_by || '-'}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="card shadow-lg">
               <h3 className="text-lg font-semibold mb-4 flex items-center justify-between">

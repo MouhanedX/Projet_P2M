@@ -1,4 +1,4 @@
-import { Activity, Wifi, WifiOff } from 'lucide-react';
+import { Wifi, WifiOff } from 'lucide-react';
 
 function Header({ wsConnected }) {
   return (
@@ -6,13 +6,13 @@ function Header({ wsConnected }) {
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center py-4">
           <div className="flex items-center space-x-3">
-            <Activity className="w-8 h-8 text-blue-600" />
+            <img src="/FiberMaster_Logo.png" alt="FiberMaster" className="w-10 h-10" />
             <div>
               <h1 className="text-2xl font-bold text-gray-900">
-                NQMS Fiber Monitoring
+                FiberMaster
               </h1>
               <p className="text-sm text-gray-500">
-                Network Quality Monitoring System
+                Fiber Network Monitoring System
               </p>
             </div>
           </div>

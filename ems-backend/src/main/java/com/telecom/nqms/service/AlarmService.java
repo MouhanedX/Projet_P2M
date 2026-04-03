@@ -1,8 +1,10 @@
 package com.telecom.nqms.service;
 
 import com.telecom.nqms.model.Alarm;
+import com.telecom.nqms.model.OtdrTestResult;
 import com.telecom.nqms.model.Route;
 import com.telecom.nqms.repository.AlarmRepository;
+import com.telecom.nqms.repository.OtdrTestResultRepository;
 import com.telecom.nqms.repository.RouteRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -15,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 @Slf4j
@@ -24,6 +27,7 @@ public class AlarmService {
     
     private final AlarmRepository alarmRepository;
     private final RouteRepository routeRepository;
+    private final OtdrTestResultRepository otdrTestResultRepository;
     private final SimpMessagingTemplate messagingTemplate;
     
     /**
@@ -42,11 +46,31 @@ public class AlarmService {
         if (alarm.getLifecycle() == null) {
             alarm.setLifecycle(Alarm.Lifecycle.builder()
                     .createdAt(Instant.now())
+                    .assignedToTechnician(false)
                     .acknowledged(false)
                     .resolved(false)
                     .escalated(false)
                     .escalationLevel(0)
                     .build());
+        } else {
+            if (alarm.getLifecycle().getCreatedAt() == null) {
+                alarm.getLifecycle().setCreatedAt(Instant.now());
+            }
+            if (alarm.getLifecycle().getAssignedToTechnician() == null) {
+                alarm.getLifecycle().setAssignedToTechnician(false);
+            }
+            if (alarm.getLifecycle().getAcknowledged() == null) {
+                alarm.getLifecycle().setAcknowledged(false);
+            }
+            if (alarm.getLifecycle().getResolved() == null) {
+                alarm.getLifecycle().setResolved(false);
+            }
+            if (alarm.getLifecycle().getEscalated() == null) {
+                alarm.getLifecycle().setEscalated(false);
+            }
+            if (alarm.getLifecycle().getEscalationLevel() == null) {
+                alarm.getLifecycle().setEscalationLevel(0);
+            }
         }
         
         // Set default status
@@ -67,6 +91,78 @@ public class AlarmService {
         log.info("Alarm created successfully: {}", savedAlarm.getAlarmId());
         return savedAlarm;
     }
+
+        /**
+         * Create a manual alarm from the test interface.
+         */
+        @Transactional
+        public Alarm createManualAlarm(ManualAlarmRequest request) {
+        String routeId = requireValue(request.getRouteId(), "routeId");
+        String rtuId = requireValue(request.getRtuId(), "rtuId");
+
+        boolean assignedToTechnician = Boolean.TRUE.equals(request.getAssignToTechnician());
+        long repairDurationSeconds = request.getRepairDurationSeconds() != null
+            ? request.getRepairDurationSeconds()
+            : 0L;
+
+        if (assignedToTechnician && repairDurationSeconds <= 0) {
+            throw new RuntimeException("repairDurationSeconds must be greater than 0 when assignToTechnician is enabled");
+        }
+
+        Instant startTime = request.getAlarmStartTime() != null ? request.getAlarmStartTime() : Instant.now();
+        String normalizedFaultType = normalizeFaultType(request.getFaultType());
+
+        Alarm.AlarmType alarmType = mapAlarmType(normalizedFaultType);
+        Alarm.AlarmSeverity severity = request.getSeverity() != null
+            ? request.getSeverity()
+            : mapSeverity(normalizedFaultType);
+
+        Alarm.AlarmDetails details = Alarm.AlarmDetails.builder()
+            .eventLocationKm(request.getFaultLocationKm())
+            .faultLocationDescription(request.getFaultLocationDescription())
+            .faultCause(request.getFaultCause())
+            .attenuationDb(request.getAttenuationDb())
+            .totalLossDb(request.getAttenuationDb())
+            .eventType(normalizedFaultType)
+            .build();
+
+        Alarm.Lifecycle lifecycle = Alarm.Lifecycle.builder()
+            .createdAt(startTime)
+            .assignedToTechnician(assignedToTechnician)
+            .assignedAt(assignedToTechnician ? startTime : null)
+            .assignedBy(assignedToTechnician ? defaultIfBlank(request.getTechnicianName(), "field-technician") : null)
+            .repairDurationSeconds(assignedToTechnician ? repairDurationSeconds : null)
+            .autoResolveAt(assignedToTechnician ? startTime.plusSeconds(repairDurationSeconds) : null)
+            .acknowledged(false)
+            .resolved(false)
+            .escalated(false)
+            .escalationLevel(0)
+            .build();
+
+        Alarm alarm = Alarm.builder()
+            .alarmId(UUID.randomUUID().toString())
+            .rtuId(rtuId)
+            .routeId(routeId)
+            .alarmType(alarmType)
+            .severity(severity)
+            .status(Alarm.AlarmStatus.ACTIVE)
+            .description(buildManualAlarmDescription(request, normalizedFaultType))
+            .details(details)
+            .impact(Alarm.ImpactInfo.builder()
+                .serviceImpact(alarmType == Alarm.AlarmType.FIBER_BREAK
+                    ? Alarm.ServiceImpact.MAJOR
+                    : Alarm.ServiceImpact.MINOR)
+                .estimatedAffectedUsers(0)
+                .affectedServices(List.of("fiber-route"))
+                .build())
+            .lifecycle(lifecycle)
+            .tags(List.of("MANUAL", "OTDR", "ROUTE:" + routeId))
+            .build();
+
+        Alarm created = createAlarm(alarm);
+        saveManualOtdrResult(created, request, startTime, normalizedFaultType);
+        return created;
+        }
     
     /**
      * Get alarm by ID
@@ -110,7 +206,7 @@ public class AlarmService {
         try {
             Alarm alarm = getAlarmById(alarmId);
             
-            if (alarm.getLifecycle() != null && alarm.getLifecycle().getResolved()) {
+            if (alarm.getLifecycle() != null && Boolean.TRUE.equals(alarm.getLifecycle().getResolved())) {
                 throw new RuntimeException("Alarm already resolved");
             }
             
@@ -123,8 +219,8 @@ public class AlarmService {
             
             alarm.getLifecycle().setResolved(true);
             alarm.getLifecycle().setResolvedAt(Instant.now());
-            alarm.getLifecycle().setResolvedBy(resolvedBy);
-            alarm.getLifecycle().setResolutionNotes(resolutionNotes);
+            alarm.getLifecycle().setResolvedBy(defaultIfBlank(resolvedBy, "system"));
+            alarm.getLifecycle().setResolutionNotes(defaultIfBlank(resolutionNotes, "Resolved manually"));
             alarm.setStatus(Alarm.AlarmStatus.RESOLVED);
             
             Alarm updated = alarmRepository.save(alarm);
@@ -151,7 +247,7 @@ public class AlarmService {
      * Get alarms for specific route
      */
     public List<Alarm> getAlarmsByRoute(String routeId) {
-        return alarmRepository.findByRouteId(routeId);
+        return alarmRepository.findByRouteIdOrderByLifecycleCreatedAtDesc(routeId);
     }
     
     /**
@@ -245,25 +341,25 @@ public class AlarmService {
         });
     }
 
-    @Scheduled(fixedRate = 60000)
+    @Scheduled(fixedDelay = 250)
     @Transactional
-    public void autoResolveStaleAlarms() {
-        Instant cutoff = Instant.now().minus(10, ChronoUnit.MINUTES);
+    public void autoResolveAssignedAlarms() {
+        Instant now = Instant.now();
+        List<Alarm> dueAlarms = alarmRepository.findDueAutoResolvableAlarms(now);
 
-        List<Alarm> staleActiveAlarms = alarmRepository.findAllActiveAlarms().stream()
-                .filter(a -> a.getLifecycle() != null && a.getLifecycle().getCreatedAt() != null)
-                .filter(a -> a.getLifecycle().getCreatedAt().isBefore(cutoff))
-                .toList();
-
-        for (Alarm alarm : staleActiveAlarms) {
+        for (Alarm alarm : dueAlarms) {
             if (alarm.getLifecycle() == null) {
                 continue;
             }
 
+            if (Boolean.TRUE.equals(alarm.getLifecycle().getResolved())) {
+                continue;
+            }
+
             alarm.getLifecycle().setResolved(true);
-            alarm.getLifecycle().setResolvedAt(Instant.now());
-            alarm.getLifecycle().setResolvedBy("system-auto");
-            alarm.getLifecycle().setResolutionNotes("Auto-resolved after stabilization window");
+            alarm.getLifecycle().setResolvedAt(now);
+            alarm.getLifecycle().setResolvedBy(defaultIfBlank(alarm.getLifecycle().getAssignedBy(), "system-timer"));
+            alarm.getLifecycle().setResolutionNotes("Resolved automatically after assigned repair duration");
             alarm.setStatus(Alarm.AlarmStatus.RESOLVED);
 
             Alarm updated = alarmRepository.save(alarm);
@@ -272,9 +368,101 @@ public class AlarmService {
             sendAlarmNotification(updated);
         }
 
-        if (!staleActiveAlarms.isEmpty()) {
-            log.info("Auto-resolved {} stale alarms", staleActiveAlarms.size());
+        if (!dueAlarms.isEmpty()) {
+            log.info("Auto-resolved {} technician-assigned alarms", dueAlarms.size());
         }
+    }
+
+    private void saveManualOtdrResult(Alarm alarm, ManualAlarmRequest request, Instant measuredAt, String faultType) {
+        String status = switch (faultType) {
+            case "break" -> "BREAK";
+            case "degradation", "high_loss_splice" -> "DEGRADATION";
+            default -> "UNKNOWN";
+        };
+
+        OtdrTestResult result = OtdrTestResult.builder()
+                .routeId(alarm.getRouteId())
+                .rtuId(alarm.getRtuId())
+                .testMode("ManualAlarm")
+                .pulseWidthNs(1000)
+                .dynamicRangeDb(40.0)
+                .wavelengthNm(1550)
+                .testResult("Fail")
+                .totalLossDb(request.getAttenuationDb())
+                .eventCount(1)
+                .faultDistanceKm(request.getFaultLocationKm())
+                .status(status)
+                .measuredAt(measuredAt)
+                .build();
+
+        otdrTestResultRepository.save(result);
+    }
+
+    private String normalizeFaultType(String faultType) {
+        String value = defaultIfBlank(faultType, "break").toLowerCase(Locale.ROOT);
+        return switch (value) {
+            case "break", "fiber_break" -> "break";
+            case "degradation", "degrade" -> "degradation";
+            case "high_loss_splice", "high_loss" -> "high_loss_splice";
+            default -> "break";
+        };
+    }
+
+    private Alarm.AlarmType mapAlarmType(String normalizedFaultType) {
+        return switch (normalizedFaultType) {
+            case "break" -> Alarm.AlarmType.FIBER_BREAK;
+            case "degradation" -> Alarm.AlarmType.DEGRADATION;
+            case "high_loss_splice" -> Alarm.AlarmType.HIGH_EVENT_LOSS;
+            default -> Alarm.AlarmType.FIBER_FAULT;
+        };
+    }
+
+    private Alarm.AlarmSeverity mapSeverity(String normalizedFaultType) {
+        return switch (normalizedFaultType) {
+            case "break" -> Alarm.AlarmSeverity.CRITICAL;
+            case "high_loss_splice" -> Alarm.AlarmSeverity.HIGH;
+            case "degradation" -> Alarm.AlarmSeverity.MEDIUM;
+            default -> Alarm.AlarmSeverity.HIGH;
+        };
+    }
+
+    private String buildManualAlarmDescription(ManualAlarmRequest request, String normalizedFaultType) {
+        if (request.getDescription() != null && !request.getDescription().isBlank()) {
+            return request.getDescription();
+        }
+
+        String cause = defaultIfBlank(request.getFaultCause(), "unknown cause");
+        String location = request.getFaultLocationDescription();
+        String locationPart = (location != null && !location.isBlank())
+                ? location
+                : (request.getFaultLocationKm() != null ? request.getFaultLocationKm() + " km" : "unknown location");
+        String attenuation = request.getAttenuationDb() != null
+                ? String.format(Locale.US, "%.2f dB", request.getAttenuationDb())
+                : "N/A";
+
+        return String.format(
+                Locale.US,
+                "Manual %s alarm on route %s (cause: %s, location: %s, attenuation: %s)",
+                normalizedFaultType.toUpperCase(Locale.ROOT),
+                request.getRouteId(),
+                cause,
+                locationPart,
+                attenuation
+        );
+    }
+
+    private String defaultIfBlank(String value, String fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        return value;
+    }
+
+    private String requireValue(String value, String fieldName) {
+        if (value == null || value.isBlank()) {
+            throw new RuntimeException(fieldName + " is required");
+        }
+        return value;
     }
     
     /**
@@ -303,5 +491,22 @@ public class AlarmService {
         private Long mediumAlarms;
         private Long lowAlarms;
         private Long alarmsToday;
+    }
+
+    @lombok.Data
+    public static class ManualAlarmRequest {
+        private String rtuId;
+        private String routeId;
+        private String faultType;
+        private String faultCause;
+        private Double faultLocationKm;
+        private String faultLocationDescription;
+        private Double attenuationDb;
+        private String description;
+        private Boolean assignToTechnician;
+        private String technicianName;
+        private Long repairDurationSeconds;
+        private Alarm.AlarmSeverity severity;
+        private Instant alarmStartTime;
     }
 }

@@ -1,7 +1,7 @@
 import { TrendingUp, TrendingDown } from 'lucide-react';
 import clsx from 'clsx';
 
-function KpiCard({ title, value, unit = '', icon, subtitle, trend, color = 'blue' }) {
+function KpiCard({ title, value, unit = '', icon, subtitle, trend, color = 'blue', isInteger = false }) {
   const colorClasses = {
     blue: 'bg-blue-50 border-blue-200 text-blue-600',
     green: 'bg-green-50 border-green-200 text-green-600',
@@ -16,7 +16,7 @@ function KpiCard({ title, value, unit = '', icon, subtitle, trend, color = 'blue
           <p className="text-sm font-medium text-gray-600 mb-1">{title}</p>
           <div className="flex items-baseline space-x-2">
             <p className="text-3xl font-bold text-gray-900">
-              {typeof value === 'number' ? value.toFixed(1) : value}
+              {typeof value === 'number' ? (isInteger ? Math.round(value) : value.toFixed(1)) : value}
             </p>
             {unit && (
               <span className="text-sm text-gray-500 font-medium">{unit}</span>

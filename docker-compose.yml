@@ -32,7 +32,7 @@ services:
       RTU_LOCATION: Tunis Central Exchange
       EMS_URL: http://ems-backend:8080
       MONITORING_INTERVAL: 60
-      AUTO_START: "true"
+      AUTO_START: "false"
       AUTO_FAULT_GENERATION: "false"
       USE_DATABASE_RTU: "true"
       MONGODB_URI: ${MONGODB_URI:-mongodb://mongodb:27017/nqms}

@@ -32,6 +32,13 @@ public class AlarmController {
         Alarm created = alarmService.createAlarm(alarm);
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
+
+    @PostMapping("/manual")
+    @Operation(summary = "Create manual alarm", description = "Create a manual OTDR alarm assigned to a technician with optional timed auto-resolution")
+    public ResponseEntity<Alarm> createManualAlarm(@RequestBody AlarmService.ManualAlarmRequest request) {
+        Alarm created = alarmService.createManualAlarm(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(created);
+    }
     
     @GetMapping("/{alarmId}")
     @Operation(summary = "Get alarm by ID")

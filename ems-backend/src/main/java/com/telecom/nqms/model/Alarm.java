@@ -80,6 +80,12 @@ public class Alarm {
         private Double totalLossDb;
         @JsonAlias("event_location_km")
         private Double eventLocationKm;
+        @JsonAlias("fault_location_description")
+        private String faultLocationDescription;
+        @JsonAlias("fault_cause")
+        private String faultCause;
+        @JsonAlias("attenuation_db")
+        private Double attenuationDb;
         @JsonAlias("event_type")
         private String eventType;
         @JsonAlias("deviation_from_baseline_db")
@@ -135,6 +141,16 @@ public class Alarm {
         @CreatedDate
         @JsonAlias("created_at")
         private Instant createdAt;
+        @JsonAlias("assigned_to_technician")
+        private Boolean assignedToTechnician;
+        @JsonAlias("assigned_at")
+        private Instant assignedAt;
+        @JsonAlias("assigned_by")
+        private String assignedBy;
+        @JsonAlias("repair_duration_seconds")
+        private Long repairDurationSeconds;
+        @JsonAlias("auto_resolve_at")
+        private Instant autoResolveAt;
         private Boolean acknowledged;
         @JsonAlias("acknowledged_at")
         private Instant acknowledgedAt;

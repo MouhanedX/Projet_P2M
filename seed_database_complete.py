@@ -429,7 +429,7 @@ ROUTES_DATA = [
         "fiberSpec": {
             "type": "Single Mode",
             "coreDiameterUm": 10.4,
-            "lengthKm": 76.0,
+            "lengthKm": 9.0,
             "expectedAttenuationDbPerKm": 0.2
         },
         "topology": {
@@ -459,44 +459,6 @@ ROUTES_DATA = [
     },
     {
         "routeId": "RTU_TN_03_R2",
-        "routeName": "Route_1774203578126",
-        "rtuId": "RTU_TN_03",
-        "region": "Sidi Bouzid",
-        "status": "ACTIVE",
-        "priority": "HIGH",
-        "fiberSpec": {
-            "type": "Single Mode",
-            "coreDiameterUm": 10.4,
-            "lengthKm": 87.0,
-            "expectedAttenuationDbPerKm": 0.2
-        },
-        "topology": {
-            "startPoint": "RTU_TN_03",
-            "endPoint": "Route_1774203578126",
-            "intermediatePoints": []
-        },
-        "baseline": {
-            "totalLossDb": 17.4,
-            "eventCount": 7,
-            "maxEventLossDb": 2.8
-        },
-        "currentCondition": {
-            "totalLossDb": 17.4,
-            "status": "NORMAL",
-            "lastTestedAt": datetime.utcnow()
-        },
-        "maintenance": {
-            "lastMaintenanceDate": datetime.utcnow(),
-            "nextScheduledDate": datetime.utcnow()
-        },
-        "sla": {
-            "targetAvailabilityPercent": 99.5,
-            "maxAcceptableLossDb": 20.0
-        },
-        "createdAt": datetime.utcnow()
-    },
-    {
-        "routeId": "RTU_TN_03_R3",
         "routeName": "Route_1774203549628",
         "rtuId": "RTU_TN_03",
         "region": "Sidi Bouzid",
@@ -505,7 +467,7 @@ ROUTES_DATA = [
         "fiberSpec": {
             "type": "Single Mode",
             "coreDiameterUm": 10.4,
-            "lengthKm": 29.0,
+            "lengthKm": 5.0,
             "expectedAttenuationDbPerKm": 0.2
         },
         "topology": {
@@ -530,6 +492,44 @@ ROUTES_DATA = [
         "sla": {
             "targetAvailabilityPercent": 99.9,
             "maxAcceptableLossDb": 7.5
+        },
+        "createdAt": datetime.utcnow()
+    },
+    {
+        "routeId": "RTU_TN_03_R3",
+        "routeName": "Route_1774203578126",
+        "rtuId": "RTU_TN_03",
+        "region": "Sidi Bouzid",
+        "status": "ACTIVE",
+        "priority": "HIGH",
+        "fiberSpec": {
+            "type": "Single Mode",
+            "coreDiameterUm": 10.4,
+            "lengthKm": 29.0,
+            "expectedAttenuationDbPerKm": 0.2
+        },
+        "topology": {
+            "startPoint": "RTU_TN_03",
+            "endPoint": "Route_1774203578126",
+            "intermediatePoints": []
+        },
+        "baseline": {
+            "totalLossDb": 17.4,
+            "eventCount": 7,
+            "maxEventLossDb": 2.8
+        },
+        "currentCondition": {
+            "totalLossDb": 17.4,
+            "status": "NORMAL",
+            "lastTestedAt": datetime.utcnow()
+        },
+        "maintenance": {
+            "lastMaintenanceDate": datetime.utcnow(),
+            "nextScheduledDate": datetime.utcnow()
+        },
+        "sla": {
+            "targetAvailabilityPercent": 99.5,
+            "maxAcceptableLossDb": 20.0
         },
         "createdAt": datetime.utcnow()
     },

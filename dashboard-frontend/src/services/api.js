@@ -30,13 +30,6 @@ export const rtusAPI = {
   testRoute: (rtuId, routeId) => rtuApi.post(`/rtu/${rtuId}/test/${routeId}`)
 };
 
-export const testControlAPI = {
-  injectFault: (rtuId, routeId, faultType = 'break') =>
-    rtuApi.post(`/rtu/${rtuId}/routes/${routeId}/fault`, { faultType }),
-  resolveFault: (rtuId, routeId) =>
-    rtuApi.post(`/rtu/${rtuId}/routes/${routeId}/resolve`)
-};
-
 // Alarms API - From EMS Backend
 export const alarmsAPI = {
   getAll: (params) => emsApi.get('/alarms', { params }),
@@ -44,6 +37,7 @@ export const alarmsAPI = {
   getById: (id) => emsApi.get(`/alarms/${id}`),
   getByRoute: (routeId) => emsApi.get(`/alarms/route/${routeId}`),
   getByRtu: (rtuId) => emsApi.get(`/alarms/rtu/${rtuId}`),
+  createManual: (payload) => emsApi.post('/alarms/manual', payload),
   resolve: (id, data) => emsApi.post(`/alarms/${id}/resolve`, data),
   getStatistics: () => emsApi.get('/alarms/statistics')
 };

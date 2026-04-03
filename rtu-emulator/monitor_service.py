@@ -122,8 +122,8 @@ class MonitorService:
         """Main monitoring loop."""
         while self.is_running:
             try:
-                # Test all routes
-                await self.test_all_routes()
+                # Manual-only mode: do not run automatic periodic route tests.
+                # Tests are triggered explicitly from API calls.
                 
                 # Generate and send KPIs periodically (every 5th iteration)
                 self.kpi_send_counter += 1
