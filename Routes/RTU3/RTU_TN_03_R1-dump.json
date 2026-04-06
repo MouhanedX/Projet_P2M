@@ -1,0 +1,259 @@
+{
+  "filename": "RTU_TN_03_R1.sor",
+  "format": 2,
+  "version": "2.00",
+  "mapblock": {
+    "nbytes": 135,
+    "nblocks": 7
+  },
+  "blocks": {
+    "GenParams": {
+      "name": "GenParams",
+      "version": "2.00",
+      "size": 40,
+      "pos": 135,
+      "order": 0
+    },
+    "SupParams": {
+      "name": "SupParams",
+      "version": "2.00",
+      "size": 45,
+      "pos": 175,
+      "order": 1
+    },
+    "FxdParams": {
+      "name": "FxdParams",
+      "version": "2.00",
+      "size": 92,
+      "pos": 220,
+      "order": 2
+    },
+    "KeyEvents": {
+      "name": "KeyEvents",
+      "version": "2.00",
+      "size": 430,
+      "pos": 312,
+      "order": 3
+    },
+    "DataPts": {
+      "name": "DataPts",
+      "version": "2.00",
+      "size": 23526,
+      "pos": 742,
+      "order": 4
+    },
+    "ExfoNewProprietaryBlock 01": {
+      "name": "ExfoNewProprietaryBlock 01",
+      "version": "2.00",
+      "size": 80871,
+      "pos": 24268,
+      "order": 5
+    },
+    "Cksum": {
+      "name": "Cksum",
+      "version": "2.00",
+      "size": 8,
+      "pos": 105139,
+      "order": 6
+    }
+  },
+  "GenParams": {
+    "language": "EN",
+    "cable ID": " ",
+    "fiber ID": " ",
+    "fiber type": "G.652 (standard SMF)",
+    "wavelength": "1625 nm",
+    "location A": " ",
+    "location B": " ",
+    "cable code/fiber type": " ",
+    "build condition": "BC (as-built)",
+    "user offset": "0",
+    "user offset distance": "0",
+    "operator": " ",
+    "comments": " "
+  },
+  "SupParams": {
+    "supplier": " ",
+    "OTDR": " ",
+    "OTDR S/N": " ",
+    "module": "FTB-7300D-004B-EA",
+    "module S/N": "779085",
+    "software": " ",
+    "other": " "
+  },
+  "FxdParams": {
+    "date/time": "Mon Oct 27 07:32:52 2014 (1414395172 sec)",
+    "unit": "mt (meters)",
+    "wavelength": "1628.9 nm",
+    "acquisition offset": 0,
+    "acquisition offset distance": 0,
+    "number of pulse width entries": 1,
+    "pulse width": "275 ns",
+    "sample spacing": "0.00625 usec",
+    "num data points": 11753,
+    "index": "1.468700",
+    "BC": "-82.60 dB",
+    "num averages": 28424,
+    "averaging time": "2 sec",
+    "range": 14.99396047045857,
+    "acquisition range distance": 9375212,
+    "front panel offset": 0,
+    "noise floor level": 43384,
+    "noise floor scaling factor": 1000,
+    "power offset first point": 0,
+    "loss thr": "0.020 dB",
+    "refl thr": "-65.535 dB",
+    "EOT thr": "4.000 dB",
+    "trace type": "ST[standard trace]",
+    "X1": 0,
+    "Y1": 0,
+    "X2": 0,
+    "Y2": 0,
+    "resolution": 1.2757560172261184
+  },
+  "KeyEvents": {
+    "num events": 9,
+    "event 1": {
+      "type": "1F9999LS {auto} reflection",
+      "distance": "0.000",
+      "slope": "0.000",
+      "splice loss": "0.000",
+      "refl loss": "-43.148",
+      "comments": " ",
+      "end of prev": "0.000",
+      "start of curr": "0.000",
+      "end of curr": "0.089",
+      "start of next": "2.054",
+      "peak": "0.031"
+    },
+    "event 2": {
+      "type": "0F9999LS {auto} loss/drop/gain",
+      "distance": "2.054",
+      "slope": "0.217",
+      "splice loss": "0.219",
+      "refl loss": "0.000",
+      "comments": " ",
+      "end of prev": "0.089",
+      "start of curr": "2.054",
+      "end of curr": "2.083",
+      "start of next": "3.825",
+      "peak": "2.054"
+    },
+    "event 3": {
+      "type": "2F9999LS {auto} multiple",
+      "distance": "3.825",
+      "slope": "0.244",
+      "splice loss": "1.552",
+      "refl loss": "-18.299",
+      "comments": " ",
+      "end of prev": "2.083",
+      "start of curr": "3.825",
+      "end of curr": "3.977",
+      "start of next": "7.753",
+      "peak": "3.878"
+    },
+    "event 4": {
+      "type": "1F9999LS {auto} reflection",
+      "distance": "7.753",
+      "slope": "0.210",
+      "splice loss": "-0.033",
+      "refl loss": "-57.354",
+      "comments": " ",
+      "end of prev": "3.977",
+      "start of curr": "7.753",
+      "end of curr": "7.791",
+      "start of next": "8.010",
+      "peak": "7.778"
+    },
+    "event 5": {
+      "type": "0F9999LS {auto} loss/drop/gain",
+      "distance": "8.010",
+      "slope": "0.359",
+      "splice loss": "-0.090",
+      "refl loss": "0.000",
+      "comments": " ",
+      "end of prev": "7.791",
+      "start of curr": "8.010",
+      "end of curr": "8.051",
+      "start of next": "8.374",
+      "peak": "8.041"
+    },
+    "event 6": {
+      "type": "0F9999LS {auto} loss/drop/gain",
+      "distance": "8.374",
+      "slope": "0.186",
+      "splice loss": "0.188",
+      "refl loss": "0.000",
+      "comments": " ",
+      "end of prev": "8.051",
+      "start of curr": "8.374",
+      "end of curr": "8.421",
+      "start of next": "9.017",
+      "peak": "8.374"
+    },
+    "event 7": {
+      "type": "1E9999LS {auto} reflection",
+      "distance": "9.017",
+      "slope": "0.170",
+      "splice loss": "0.000",
+      "refl loss": "-16.724",
+      "comments": " ",
+      "end of prev": "8.421",
+      "start of curr": "9.017",
+      "end of curr": "9.177",
+      "start of next": "9.395",
+      "peak": "9.035"
+    },
+    "event 8": {
+      "type": "1F9999LS {auto} reflection",
+      "distance": "12.852",
+      "slope": "1.900",
+      "splice loss": "0.000",
+      "refl loss": "-34.948",
+      "comments": " ",
+      "end of prev": "10.038",
+      "start of curr": "12.852",
+      "end of curr": "12.948",
+      "start of next": "14.163",
+      "peak": "12.930"
+    },
+    "event 9": {
+      "type": "1F9999LS {auto} reflection",
+      "distance": "14.163",
+      "slope": "0.100",
+      "splice loss": "0.000",
+      "refl loss": "-30.586",
+      "comments": " ",
+      "end of prev": "12.948",
+      "start of curr": "14.163",
+      "end of curr": "14.260",
+      "start of next": "14.993",
+      "peak": "14.190"
+    },
+    "Summary": {
+      "total loss": 3.809,
+      "ORL": 18.648,
+      "loss start": 0.0,
+      "loss end": 9.017044,
+      "ORL start": 0.0,
+      "ORL finish": 9.017044
+    }
+  },
+  "DataPts": {
+    "_datapts_params": {
+      "xscaling": 1,
+      "offset": "STV"
+    },
+    "num data points": 11753,
+    "num traces": 1,
+    "num data points 2": 11753,
+    "scaling factor": 1.0,
+    "max before offset": 63.999,
+    "min before offset": 23.628
+  },
+  "Cksum": {
+    "checksum_ours": 50473,
+    "checksum": 63632,
+    "match": false
+  }
+}

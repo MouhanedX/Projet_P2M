@@ -20,7 +20,6 @@ import java.util.Map;
 @RequestMapping("/api/alarms")
 @RequiredArgsConstructor
 @Tag(name = "Alarms", description = "Alarm management APIs")
-@CrossOrigin(origins = "*")
 public class AlarmController {
     
     private final AlarmService alarmService;

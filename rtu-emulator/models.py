@@ -51,6 +51,10 @@ class OTDRTrace(BaseModel):
     events: List[OTDREvent] = []
     status: TraceStatus
     measurement_duration_ms: int = Field(default=1000)
+    event_reference_file: Optional[str] = None
+    measurement_reference_file: Optional[str] = None
+    average_power_db: Optional[float] = None
+    power_variation_db: Optional[float] = None
     
     class Config:
         json_schema_extra = {
@@ -350,6 +354,10 @@ class OTDRTestReport(BaseModel):
     fault_distance_km: Optional[float] = None
     status: str
     measured_at: datetime = Field(default_factory=datetime.now)
+    event_reference_file: Optional[str] = None
+    measurement_reference_file: Optional[str] = None
+    average_power_db: Optional[float] = None
+    power_variation_db: Optional[float] = None
 
 
 class RTUStatus(BaseModel):

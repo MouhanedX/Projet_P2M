@@ -15,7 +15,6 @@ import java.util.List;
 @RequestMapping("/api/otdr-tests")
 @RequiredArgsConstructor
 @Tag(name = "OTDR Tests", description = "OTDR telemetry and recent test results")
-@CrossOrigin(origins = "*")
 public class OtdrTestController {
 
     private final OtdrTestResultRepository testResultRepository;

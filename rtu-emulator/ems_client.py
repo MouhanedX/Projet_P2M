@@ -15,8 +15,12 @@ class EMSClient:
     def __init__(self):
         self.ems_url = settings.ems_url
         self.timeout = settings.ems_connection_timeout
+        self.internal_api_key = settings.ems_internal_api_key
         self.max_retries = 3
         self.retry_delay = 2  # seconds
+
+    def _auth_headers(self) -> dict:
+        return {"X-Internal-Api-Key": self.internal_api_key}
     
     async def send_alarm(self, alarm: Alarm) -> bool:
         """
@@ -37,7 +41,7 @@ class EMSClient:
                     alarm_dict = alarm.model_dump(mode='json')
                     
                     # Send POST request
-                    response = await client.post(endpoint, json=alarm_dict)
+                    response = await client.post(endpoint, json=alarm_dict, headers=self._auth_headers())
                     
                     if response.status_code in [200, 201]:
                         logger.info(
@@ -115,7 +119,7 @@ class EMSClient:
         try:
             endpoint = f"{self.ems_url}/api/rtu/heartbeat"
             async with httpx.AsyncClient(timeout=5) as client:
-                response = await client.post(endpoint, json=rtu_status)
+                response = await client.post(endpoint, json=rtu_status, headers=self._auth_headers())
                 return response.status_code in [200, 201]
         except Exception as e:
             logger.debug(f"Heartbeat send failed: {str(e)}")
@@ -146,9 +150,13 @@ class EMSClient:
                     "eventCount": report.event_count,
                     "faultDistanceKm": report.fault_distance_km,
                     "status": report.status,
-                    "measuredAt": measured_at_iso
+                    "measuredAt": measured_at_iso,
+                    "eventReferenceFile": report.event_reference_file,
+                    "measurementReferenceFile": report.measurement_reference_file,
+                    "averagePowerDb": report.average_power_db,
+                    "powerVariationDb": report.power_variation_db,
                 }
-                response = await client.post(endpoint, json=payload)
+                response = await client.post(endpoint, json=payload, headers=self._auth_headers())
                 if response.status_code not in [200, 201]:
                     logger.warning(
                         f"Telemetry rejected by EMS with status {response.status_code}: {response.text}"
@@ -174,7 +182,7 @@ class EMSClient:
             try:
                 async with httpx.AsyncClient(timeout=self.timeout) as client:
                     kpi_dict = kpi.model_dump(mode='json')
-                    response = await client.post(endpoint, json=kpi_dict)
+                    response = await client.post(endpoint, json=kpi_dict, headers=self._auth_headers())
                     
                     if response.status_code in [200, 201]:
                         logger.info(
@@ -215,7 +223,7 @@ class EMSClient:
         endpoint = f"{self.ems_url}/api/alarms/route/{route_id}"
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(endpoint)
+                response = await client.get(endpoint, headers=self._auth_headers())
                 if response.status_code != 200:
                     logger.warning(
                         "Failed to fetch route alarms from EMS for %s (status=%s)",
@@ -240,7 +248,7 @@ class EMSClient:
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(endpoint, json=payload)
+                response = await client.post(endpoint, json=payload, headers=self._auth_headers())
                 return response.status_code in [200, 201]
         except Exception as e:
             logger.error("Error resolving alarm %s: %s", alarm_id, str(e))

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Activity, AlertTriangle, Clock3, RefreshCw, UserCheck, Wrench } from 'lucide-react';
-import { alarmsAPI, routesAPI } from '../services/api';
+import { Activity, AlertTriangle, Clock3, Play, RefreshCw, SlidersHorizontal, UserCheck, Wrench } from 'lucide-react';
+import { alarmsAPI, routesAPI, rtusAPI } from '../services/api';
 
 const FAULT_CAUSES = [
   'FIBER_BREAK',
@@ -64,7 +64,13 @@ function TestControlPage() {
   const [activeAlarms, setActiveAlarms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [feedback, setFeedback] = useState(null);
+  const [configSaving, setConfigSaving] = useState(false);
+  const [manualTesting, setManualTesting] = useState(false);
+  const [feedback, setFeedback] = useState({
+    type: null,
+    text: ''
+  });
+  const [lastManualTest, setLastManualTest] = useState(null);
   const [form, setForm] = useState({
     rtuId: '',
     routeId: '',
@@ -76,6 +82,12 @@ function TestControlPage() {
     repairDurationSeconds: '300',
     technicianName: 'field-team',
     description: ''
+  });
+  const [otdrConfig, setOtdrConfig] = useState({
+    mode: 'manual',
+    periodSeconds: 300,
+    routeId: '',
+    nextAutoTestAt: null
   });
 
   const groupedRoutes = useMemo(() => {
@@ -95,6 +107,40 @@ function TestControlPage() {
     [routes, form.rtuId]
   );
 
+  const loadOtdrConfig = async (rtuId, defaultRouteId = '') => {
+    if (!rtuId) {
+      setOtdrConfig({
+        mode: 'manual',
+        periodSeconds: 300,
+        routeId: defaultRouteId,
+        nextAutoTestAt: null
+      });
+      return;
+    }
+
+    try {
+      const response = await rtusAPI.getOtdrConfig(rtuId);
+      const payload = response.data || {};
+
+      setOtdrConfig((prev) => ({
+        ...prev,
+        mode: payload.mode === 'auto' ? 'auto' : 'manual',
+        periodSeconds: payload.period_seconds || prev.periodSeconds || 300,
+        routeId: prev.routeId || defaultRouteId,
+        nextAutoTestAt: payload.next_auto_test_at || null
+      }));
+    } catch (error) {
+      console.error(`Failed to load OTDR config for ${rtuId}:`, error);
+      setOtdrConfig((prev) => ({
+        ...prev,
+        mode: 'manual',
+        periodSeconds: prev.periodSeconds || 300,
+        routeId: prev.routeId || defaultRouteId,
+        nextAutoTestAt: null
+      }));
+    }
+  };
+
   const loadData = async () => {
     setLoading(true);
     try {
@@ -113,27 +159,41 @@ function TestControlPage() {
       setActiveAlarms(alarms);
 
       if (allRoutes.length > 0) {
-        setForm((prev) => {
-          const selectedRtu = prev.rtuId || allRoutes[0].rtuId;
-          const selectedRouteStillExists = allRoutes.some(
-            (route) => route.routeId === prev.routeId && route.rtuId === selectedRtu
-          );
+        let selectedRtu = form.rtuId || allRoutes[0].rtuId;
+        let routesForRtu = allRoutes.filter((route) => route.rtuId === selectedRtu);
 
-          const defaultRoute = allRoutes.find((route) => route.rtuId === selectedRtu) || allRoutes[0];
+        if (routesForRtu.length === 0) {
+          selectedRtu = allRoutes[0].rtuId;
+          routesForRtu = allRoutes.filter((route) => route.rtuId === selectedRtu);
+        }
 
-          return {
-            ...prev,
-            rtuId: selectedRtu,
-            routeId: selectedRouteStillExists ? prev.routeId : (defaultRoute?.routeId || '')
-          };
-        });
+        const selectedRouteStillExists = allRoutes.some(
+          (route) => route.routeId === form.routeId && route.rtuId === selectedRtu
+        );
+        const defaultRouteId = selectedRouteStillExists
+          ? form.routeId
+          : (routesForRtu[0]?.routeId || allRoutes[0]?.routeId || '');
+
+        setForm((prev) => ({
+          ...prev,
+          rtuId: selectedRtu,
+          routeId: defaultRouteId
+        }));
+
+        setOtdrConfig((prev) => ({
+          ...prev,
+          routeId: prev.routeId || defaultRouteId
+        }));
+
+        await loadOtdrConfig(selectedRtu, defaultRouteId);
       }
     } catch (error) {
       console.error('Failed to load test control data:', error);
-      setFeedback({
+      setFeedback((prev) => ({
+        ...prev,
         type: 'error',
         text: 'Impossible de charger les routes ou les alarmes actives.'
-      });
+      }));
     } finally {
       setLoading(false);
     }
@@ -147,13 +207,119 @@ function TestControlPage() {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleRtuChange = (value) => {
+  const handleConfigChange = (field, value) => {
+    setOtdrConfig((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleRtuChange = async (value) => {
     const firstRoute = routes.find((route) => route.rtuId === value);
+    const routeId = firstRoute?.routeId || '';
+
     setForm((prev) => ({
       ...prev,
       rtuId: value,
-      routeId: firstRoute?.routeId || ''
+      routeId
     }));
+
+    setOtdrConfig((prev) => ({
+      ...prev,
+      routeId
+    }));
+
+    await loadOtdrConfig(value, routeId);
+  };
+
+  const handleSaveOtdrConfig = async () => {
+    if (!form.rtuId) {
+      setFeedback({
+        type: 'error',
+        text: 'Selectionnez un RTU avant de sauvegarder la configuration OTDR.'
+      });
+      return;
+    }
+
+    const periodSeconds = Number(otdrConfig.periodSeconds);
+    if (!Number.isFinite(periodSeconds) || periodSeconds < 30) {
+      setFeedback({
+        type: 'error',
+        text: 'La periode OTDR doit etre un nombre >= 30 secondes.'
+      });
+      return;
+    }
+
+    setConfigSaving(true);
+    try {
+      const response = await rtusAPI.updateOtdrConfig(form.rtuId, {
+        mode: otdrConfig.mode,
+        periodSeconds
+      });
+      const payload = response.data || {};
+
+      setOtdrConfig((prev) => ({
+        ...prev,
+        mode: payload.mode === 'auto' ? 'auto' : 'manual',
+        periodSeconds: payload.period_seconds || periodSeconds,
+        nextAutoTestAt: payload.next_auto_test_at || null
+      }));
+
+      setFeedback({
+        type: 'success',
+        text: `Configuration OTDR enregistree: mode ${payload.mode || otdrConfig.mode}, periode ${payload.period_seconds || periodSeconds}s.`
+      });
+    } catch (error) {
+      console.error('Failed to update OTDR config:', error);
+      setFeedback({
+        type: 'error',
+        text: 'Echec de sauvegarde de la configuration OTDR.'
+      });
+    } finally {
+      setConfigSaving(false);
+    }
+  };
+
+  const handleLaunchManualTest = async () => {
+    if (!form.rtuId) {
+      setFeedback({
+        type: 'error',
+        text: 'Selectionnez un RTU avant de lancer un test manuel.'
+      });
+      return;
+    }
+
+    const routeId = otdrConfig.routeId || form.routeId;
+    if (!routeId) {
+      setFeedback({
+        type: 'error',
+        text: 'Selectionnez une route pour le test manuel.'
+      });
+      return;
+    }
+
+    setManualTesting(true);
+    try {
+      const response = await rtusAPI.launchManualTest(form.rtuId, routeId);
+      const result = response.data || {};
+      setLastManualTest(result);
+
+      const variationText = typeof result.power_variation_db === 'number'
+        ? `${result.power_variation_db.toFixed(3)} dB`
+        : '-';
+
+      setFeedback({
+        type: 'success',
+        text: `Test manuel termine sur ${routeId}. Fichiers: ${result.event_reference_file || 'N/A'} + ${result.measurement_reference_file || 'N/A'} | variation puissance: ${variationText}`
+      });
+
+      await loadData();
+    } catch (error) {
+      console.error('Failed to launch manual test:', error);
+      setFeedback({
+        type: 'error',
+        text: 'Echec du lancement du test OTDR manuel.'
+      });
+    } finally {
+      setManualTesting(false);
+    }
   };
 
   const handleCreateManualAlarm = async () => {
@@ -194,7 +360,7 @@ function TestControlPage() {
     }
 
     setSubmitting(true);
-    setFeedback(null);
+    setFeedback({ type: null, text: '' });
 
     try {
       await alarmsAPI.createManual({
@@ -234,6 +400,8 @@ function TestControlPage() {
       .filter((routeId) => typeof routeId === 'string' && routeId.length > 0)
   );
 
+  const nextAutoTestDate = parseTimestamp(otdrConfig.nextAutoTestAt);
+
   return (
     <div className="space-y-6">
       <div className="card bg-gradient-to-r from-slate-900 via-blue-900 to-cyan-900 text-white">
@@ -265,7 +433,7 @@ function TestControlPage() {
         </div>
       </div>
 
-      {feedback && (
+      {feedback?.type && (
         <div className={`card border ${feedback.type === 'success' ? 'border-emerald-300 bg-emerald-50' : 'border-red-300 bg-red-50'}`}>
           <p className={`text-sm font-medium ${feedback.type === 'success' ? 'text-emerald-700' : 'text-red-700'}`}>
             {feedback.text}
@@ -281,6 +449,103 @@ function TestControlPage() {
         </div>
       ) : (
         <>
+          <div className="card space-y-4 border border-blue-200 bg-blue-50/40">
+            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+              <SlidersHorizontal className="w-5 h-5 text-blue-700" />
+              Config OTDR
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <label className="text-sm font-medium text-slate-700 space-y-1">
+                <span>RTU</span>
+                <select
+                  value={form.rtuId}
+                  onChange={(e) => handleRtuChange(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                >
+                  {groupedRoutes.map(([rtuId]) => (
+                    <option key={rtuId} value={rtuId}>{rtuId}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="text-sm font-medium text-slate-700 space-y-1">
+                <span>Mode OTDR</span>
+                <select
+                  value={otdrConfig.mode}
+                  onChange={(e) => handleConfigChange('mode', e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                >
+                  <option value="manual">Manuel</option>
+                  <option value="auto">Auto</option>
+                </select>
+              </label>
+
+              <label className="text-sm font-medium text-slate-700 space-y-1">
+                <span>Periode test auto (secondes)</span>
+                <input
+                  type="number"
+                  min="30"
+                  step="1"
+                  value={otdrConfig.periodSeconds}
+                  onChange={(e) => handleConfigChange('periodSeconds', e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                />
+              </label>
+
+              <label className="text-sm font-medium text-slate-700 space-y-1">
+                <span>Route test manuel</span>
+                <select
+                  value={otdrConfig.routeId || form.routeId}
+                  onChange={(e) => handleConfigChange('routeId', e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                >
+                  {selectedRtuRoutes.map((route) => (
+                    <option key={route.routeId} value={route.routeId}>{route.routeId}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                onClick={handleSaveOtdrConfig}
+                disabled={configSaving}
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-white font-semibold hover:bg-blue-800 disabled:opacity-50"
+              >
+                <SlidersHorizontal className="w-4 h-4" />
+                {configSaving ? 'Sauvegarde...' : 'Sauvegarder Config'}
+              </button>
+
+              <button
+                onClick={handleLaunchManualTest}
+                disabled={manualTesting}
+                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-white font-semibold hover:bg-emerald-700 disabled:opacity-50"
+              >
+                <Play className="w-4 h-4" />
+                {manualTesting ? 'Test en cours...' : 'Lancer Test Manuel'}
+              </button>
+
+              <span className="text-xs text-slate-600">
+                Prochain test auto: {nextAutoTestDate ? nextAutoTestDate.toLocaleString() : '-'}
+              </span>
+            </div>
+
+            {lastManualTest && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                <p className="font-semibold">Dernier test manuel: {lastManualTest.route_id || '-'}</p>
+                <p>
+                  Fichiers reference: {lastManualTest.event_reference_file || '-'} + {lastManualTest.measurement_reference_file || '-'}
+                </p>
+                <p>
+                  Puissance moyenne: {typeof lastManualTest.average_power_db === 'number' ? `${lastManualTest.average_power_db.toFixed(3)} dB` : '-'}
+                  {' | '}
+                  Variation: {typeof lastManualTest.power_variation_db === 'number' ? `${lastManualTest.power_variation_db.toFixed(3)} dB` : '-'}
+                </p>
+              </div>
+            )}
+          </div>
+
           <div className="card space-y-4">
             <h3 className="text-lg font-bold text-slate-800">Creation d alarme manuelle (OTDR)</h3>
 

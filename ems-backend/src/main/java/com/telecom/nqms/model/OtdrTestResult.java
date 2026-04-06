@@ -45,6 +45,14 @@ public class OtdrTestResult {
 
     private String status;
 
+    private String eventReferenceFile;
+
+    private String measurementReferenceFile;
+
+    private Double averagePowerDb;
+
+    private Double powerVariationDb;
+
     private Instant measuredAt;
 
     @CreatedDate

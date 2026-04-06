@@ -1,8 +1,8 @@
 import asyncio
 import random
 import logging
-from datetime import datetime
-from typing import Dict, List
+from datetime import datetime, timedelta
+from typing import Dict
 from models import RouteInfo, TraceStatus, OTDRTestReport
 from otdr_simulator import OTDRSimulator
 from alarm_service import AlarmService
@@ -32,7 +32,10 @@ class MonitorService:
         self.temperature_c = 34.5
         self.power_supply = "Normal"
         self.otdr_availability = "Ready"
-        self.kpi_send_counter = 0  # Track KPI sending frequency
+        self.test_mode = self._normalize_test_mode(settings.otdr_test_mode)
+        self.test_period_seconds = max(30, int(settings.otdr_test_period_seconds))
+        self.next_auto_test_at = None
+        self.next_kpi_at = None
         self.manual_faults: Dict[str, str] = {}
         
         # Initialize routes
@@ -97,6 +100,10 @@ class MonitorService:
         
         self.is_running = True
         logger.info(f"Starting monitoring with interval {settings.monitoring_interval}s")
+
+        now = datetime.now()
+        self.next_auto_test_at = now + timedelta(seconds=self.test_period_seconds)
+        self.next_kpi_at = now + timedelta(seconds=max(60, settings.monitoring_interval * 5))
         
         # Create background task
         self.monitoring_task = asyncio.create_task(self._monitoring_loop())
@@ -122,16 +129,17 @@ class MonitorService:
         """Main monitoring loop."""
         while self.is_running:
             try:
-                # Manual-only mode: do not run automatic periodic route tests.
-                # Tests are triggered explicitly from API calls.
-                
-                # Generate and send KPIs periodically (every 5th iteration)
-                self.kpi_send_counter += 1
-                if self.kpi_send_counter % 5 == 0:
+                now = datetime.now()
+
+                if self.test_mode == "auto" and self.next_auto_test_at and now >= self.next_auto_test_at:
+                    await self.test_all_routes()
+                    self.next_auto_test_at = datetime.now() + timedelta(seconds=self.test_period_seconds)
+
+                if self.next_kpi_at and now >= self.next_kpi_at:
                     await self._generate_and_send_kpis()
-                
-                # Wait for next interval
-                await asyncio.sleep(settings.monitoring_interval)
+                    self.next_kpi_at = datetime.now() + timedelta(seconds=max(60, settings.monitoring_interval * 5))
+
+                await asyncio.sleep(1)
             
             except asyncio.CancelledError:
                 break
@@ -147,7 +155,7 @@ class MonitorService:
             try:
                 # Periodic checks update telemetry/KPIs only.
                 # Alarm generation is now controlled manually from the test interface.
-                await self.test_route(route_id, generate_alarm=False)
+                await self.test_route(route_id, test_mode="AutoPeriodic", generate_alarm=False)
                 # Small delay between tests
                 await asyncio.sleep(1)
             except Exception as e:
@@ -159,7 +167,7 @@ class MonitorService:
         test_mode: str = "Auto",
         forced_fault: str | None = None,
         generate_alarm: bool = True,
-    ):
+    ) -> OTDRTestReport:
         """
         Test a specific route and generate alarms if needed.
         
@@ -225,7 +233,11 @@ class MonitorService:
             event_count=len(trace.events),
             fault_distance_km=fault_distance_km,
             status=trace.status.value,
-            measured_at=datetime.now()
+            measured_at=datetime.now(),
+            event_reference_file=trace.event_reference_file,
+            measurement_reference_file=trace.measurement_reference_file,
+            average_power_db=trace.average_power_db,
+            power_variation_db=trace.power_variation_db,
         )
 
         await self.ems_client.send_test_report(test_report)
@@ -256,6 +268,8 @@ class MonitorService:
                     route_info.active_alarms = 0
         elif trace.status == TraceStatus.NORMAL:
             route_info.active_alarms = 0
+
+        return test_report
 
     async def trigger_manual_fault(self, route_id: str, fault_type: str = "break") -> dict:
         """Inject a persistent fault on a route and raise one alarm immediately."""
@@ -319,6 +333,27 @@ class MonitorService:
             "normal": "normal",
         }
         return aliases.get(value, "break")
+
+    def _normalize_test_mode(self, mode: str) -> str:
+        value = (mode or "manual").strip().lower()
+        return "auto" if value == "auto" else "manual"
+
+    def get_test_config(self) -> dict:
+        return {
+            "mode": self.test_mode,
+            "period_seconds": self.test_period_seconds,
+            "next_auto_test_at": self.next_auto_test_at.isoformat() if self.next_auto_test_at else None,
+        }
+
+    def update_test_config(self, mode: str | None = None, period_seconds: int | None = None) -> dict:
+        if mode is not None:
+            self.test_mode = self._normalize_test_mode(mode)
+
+        if period_seconds is not None:
+            self.test_period_seconds = max(30, int(period_seconds))
+
+        self.next_auto_test_at = datetime.now() + timedelta(seconds=self.test_period_seconds)
+        return self.get_test_config()
     
     def _select_fault_scenario(self) -> str:
         """
@@ -370,7 +405,10 @@ class MonitorService:
             "power_supply": self.power_supply,
             "temperature_c": round(self.temperature_c, 2),
             "temperature_state": temperature_state,
-            "otdr_availability": self.otdr_availability
+            "otdr_availability": self.otdr_availability,
+            "test_mode": self.test_mode,
+            "test_period_seconds": self.test_period_seconds,
+            "next_auto_test_at": self.next_auto_test_at.isoformat() if self.next_auto_test_at else None,
         }
     
     def get_route_info(self, route_id: str) -> RouteInfo:

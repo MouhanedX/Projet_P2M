@@ -19,6 +19,9 @@ spring:
     
 server:
   port: 8080
+  servlet:
+    session:
+      timeout: 30m
   compression:
     enabled: true
     mime-types: application/json,application/xml,text/html,text/xml,text/plain
@@ -42,6 +45,11 @@ logging:
     
 # Application specific configurations
 nqms:
+  auth:
+    bootstrap-username: ${NQMS_AUTH_USERNAME:admin}
+    bootstrap-password: ${NQMS_AUTH_PASSWORD:admin123}
+    bootstrap-role: ${NQMS_AUTH_ROLE:ADMIN}
+    internal-api-key: ${NQMS_INTERNAL_API_KEY:rtu-emulator-key}
   kpi:
     calculation-interval-minutes: 5
     retention-days: 365

@@ -31,6 +31,7 @@ services:
       RTU_NAME: Remote Test Unit 01
       RTU_LOCATION: Tunis Central Exchange
       EMS_URL: http://ems-backend:8080
+      EMS_INTERNAL_API_KEY: ${NQMS_INTERNAL_API_KEY:-rtu-emulator-key}
       MONITORING_INTERVAL: 60
       AUTO_START: "false"
       AUTO_FAULT_GENERATION: "false"
@@ -44,6 +45,8 @@ services:
       MAX_FIBER_LENGTH: 50
     ports:
       - "8001:8001"
+    volumes:
+      - ./Routes:/app/Routes:ro
     networks:
       - nqms-network
     depends_on:
@@ -65,6 +68,9 @@ services:
       SPRING_DATA_MONGODB_DATABASE: nqms
       SERVER_PORT: 8080
       SPRING_APPLICATION_NAME: nqms-ems-backend
+      NQMS_AUTH_USERNAME: ${NQMS_AUTH_USERNAME:-admin}
+      NQMS_AUTH_PASSWORD: ${NQMS_AUTH_PASSWORD:-admin123}
+      NQMS_INTERNAL_API_KEY: ${NQMS_INTERNAL_API_KEY:-rtu-emulator-key}
       # WebSocket configuration
       WEBSOCKET_ALLOWED_ORIGINS: http://localhost:3000,http://dashboard:80
     ports:

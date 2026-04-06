@@ -18,7 +18,6 @@ import java.util.List;
 @RequestMapping("/api/routes")
 @RequiredArgsConstructor
 @Tag(name = "Routes", description = "Fiber route management APIs")
-@CrossOrigin(origins = "*")
 public class RouteController {
 
     private final RouteRepository routeRepository;
@@ -76,6 +75,10 @@ public class RouteController {
         condition.setWavelengthNm(request.wavelengthNm);
         condition.setTestResult(request.testResult);
         condition.setFaultDistanceKm(request.faultDistanceKm);
+        condition.setEventReferenceFile(request.eventReferenceFile);
+        condition.setMeasurementReferenceFile(request.measurementReferenceFile);
+        condition.setAveragePowerDb(request.averagePowerDb);
+        condition.setPowerVariationDb(request.powerVariationDb);
         condition.setRouteStatus("NORMAL".equalsIgnoreCase(request.status) ? "Active" : "Inactive");
 
         if ("BREAK".equalsIgnoreCase(request.status)) {
@@ -100,6 +103,10 @@ public class RouteController {
                 .eventCount(request.eventCount)
                 .faultDistanceKm(request.faultDistanceKm)
                 .status(request.status)
+                .eventReferenceFile(request.eventReferenceFile)
+                .measurementReferenceFile(request.measurementReferenceFile)
+                .averagePowerDb(request.averagePowerDb)
+                .powerVariationDb(request.powerVariationDb)
                 .measuredAt(request.measuredAt != null ? request.measuredAt : Instant.now())
                 .build();
         testResultRepository.save(result);
@@ -121,5 +128,9 @@ public class RouteController {
         private Double faultDistanceKm;
         private String status;
         private Instant measuredAt;
+        private String eventReferenceFile;
+        private String measurementReferenceFile;
+        private Double averagePowerDb;
+        private Double powerVariationDb;
     }
 }

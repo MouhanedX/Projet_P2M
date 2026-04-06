@@ -17,11 +17,21 @@ class Settings(BaseSettings):
     # EMS Connection
     ems_url: str = "http://localhost:8080"
     ems_connection_timeout: int = 10
+    ems_internal_api_key: str = "rtu-emulator-key"
     
     # Monitoring Configuration
     monitoring_interval: int = 60  # seconds - alarms every minute
     auto_start: bool = False
     auto_fault_generation: bool = False  # If False, alarms are only raised via manual test interface
+
+    # OTDR Test Scheduling
+    otdr_test_mode: str = "manual"  # manual | auto
+    otdr_test_period_seconds: int = 300
+
+    # Route reference data
+    routes_reference_dir: str = "Routes"
+    power_variation_min_db: float = 0.1
+    power_variation_max_db: float = 0.3
     
     # Routes (legacy - used if use_database_rtu=False)
     routes: str = "OR_1,OR_2,OR_3,OR_4,OR_5"

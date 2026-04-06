@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -26,6 +26,11 @@ db_service = None
 
 class FaultInjectionRequest(BaseModel):
     faultType: str = "break"
+
+
+class OtdrConfigUpdateRequest(BaseModel):
+    mode: str | None = None
+    periodSeconds: int | None = None
 
 
 async def initialize_rtu_monitors():
@@ -221,7 +226,7 @@ async def stop_rtu_monitoring(rtu_id: str):
 
 
 @app.post("/api/rtu/{rtu_id}/test/{route_id}")
-async def test_route(rtu_id: str, route_id: str, background_tasks: BackgroundTasks):
+async def test_route(rtu_id: str, route_id: str):
     """
     Trigger on-demand test for a specific route in an RTU.
     """
@@ -237,14 +242,51 @@ async def test_route(rtu_id: str, route_id: str, background_tasks: BackgroundTas
         )
     
     logger.info(f"On-demand test requested for RTU {rtu_id}, route {route_id}")
-    background_tasks.add_task(monitor_service.test_route, route_id, "Manual", None, False)
+    report = await monitor_service.test_route(route_id, "Manual", None, False)
     
     return {
-        "message": f"Test initiated for route {route_id}",
+        "message": f"Test completed for route {route_id}",
         "rtu_id": rtu_id,
         "route_id": route_id,
-        "timestamp": datetime.now().isoformat()
+        "event_reference_file": report.event_reference_file,
+        "measurement_reference_file": report.measurement_reference_file,
+        "average_power_db": report.average_power_db,
+        "power_variation_db": report.power_variation_db,
+        "timestamp": datetime.now().isoformat(),
     }
+
+
+@app.get("/api/rtu/{rtu_id}/otdr-config")
+async def get_rtu_otdr_config(rtu_id: str):
+    """Get OTDR test mode and period configuration for a specific RTU."""
+    if rtu_id not in monitor_services:
+        raise HTTPException(status_code=404, detail=f"RTU {rtu_id} not found")
+
+    monitor_service = monitor_services[rtu_id]
+    config = monitor_service.get_test_config()
+    config["rtu_id"] = rtu_id
+    config["is_monitoring"] = monitor_service.is_running
+    return config
+
+
+@app.put("/api/rtu/{rtu_id}/otdr-config")
+async def update_rtu_otdr_config(rtu_id: str, request: OtdrConfigUpdateRequest):
+    """Update OTDR test mode (auto/manual) and period for a specific RTU."""
+    if rtu_id not in monitor_services:
+        raise HTTPException(status_code=404, detail=f"RTU {rtu_id} not found")
+
+    monitor_service = monitor_services[rtu_id]
+    updated = monitor_service.update_test_config(
+        mode=request.mode,
+        period_seconds=request.periodSeconds,
+    )
+
+    if updated.get("mode") == "auto" and not monitor_service.is_running:
+        await monitor_service.start_monitoring()
+
+    updated["rtu_id"] = rtu_id
+    updated["is_monitoring"] = monitor_service.is_running
+    return updated
 
 
 @app.get("/api/rtu/{rtu_id}/routes")
@@ -342,6 +384,13 @@ async def get_config():
         "rtu_ids": list(monitor_services.keys()),
         "ems_url": settings.ems_url,
         "monitoring_interval": settings.monitoring_interval,
+        "otdr_test_defaults": {
+            "mode": settings.otdr_test_mode,
+            "period_seconds": settings.otdr_test_period_seconds,
+            "reference_dir": settings.routes_reference_dir,
+            "power_variation_min_db": settings.power_variation_min_db,
+            "power_variation_max_db": settings.power_variation_max_db,
+        },
         "thresholds": {
             "degradation_db": settings.alarm_threshold_degradation,
             "break_db": settings.alarm_threshold_break,

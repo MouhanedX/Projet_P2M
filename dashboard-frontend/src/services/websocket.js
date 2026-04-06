@@ -2,7 +2,7 @@ import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 
 // Use HTTP(S) URL for SockJS endpoint by default (SockJS expects http/https)
-const WS_URL = import.meta.env.VITE_WS_URL || 'http://localhost:8080/ws';
+const WS_URL = import.meta.env.VITE_WS_URL || '/ws';
 
 class WebSocketService {
   constructor() {
@@ -14,6 +14,7 @@ class WebSocketService {
   connect(onConnected, onError) {
     if (this.client && this.connected) {
       console.log('WebSocket already connected');
+      if (onConnected) onConnected();
       return;
     }
 

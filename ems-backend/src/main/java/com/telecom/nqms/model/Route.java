@@ -126,6 +126,10 @@ public class Route {
         private Integer wavelengthNm;
         private String testResult;
         private Double faultDistanceKm;
+        private String eventReferenceFile;
+        private String measurementReferenceFile;
+        private Double averagePowerDb;
+        private Double powerVariationDb;
     }
     
     @Data

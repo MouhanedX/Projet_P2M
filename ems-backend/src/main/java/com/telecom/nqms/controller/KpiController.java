@@ -14,7 +14,6 @@ import java.util.List;
 @RequestMapping("/api/kpis")
 @RequiredArgsConstructor
 @Tag(name = "KPIs", description = "Key Performance Indicators APIs")
-@CrossOrigin(origins = "*")
 public class KpiController {
     
     private final KpiCalculationService kpiCalculationService;

@@ -13,8 +13,13 @@ export default defineConfig({
         target: 'http://localhost:8080',
         changeOrigin: true
       },
+      '/rtu-api': {
+        target: 'http://localhost:8001',
+        changeOrigin: true
+      },
       '/ws': {
-        target: 'ws://localhost:8080',
+        target: 'http://localhost:8080',
+        changeOrigin: true,
         ws: true
       }
     }

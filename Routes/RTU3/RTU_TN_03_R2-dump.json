@@ -1,0 +1,246 @@
+{
+  "filename": "RTU_TN_03_R2.sor",
+  "format": 2,
+  "version": "2.00",
+  "mapblock": {
+    "nbytes": 135,
+    "nblocks": 7
+  },
+  "blocks": {
+    "GenParams": {
+      "name": "GenParams",
+      "version": "2.00",
+      "size": 40,
+      "pos": 135,
+      "order": 0
+    },
+    "SupParams": {
+      "name": "SupParams",
+      "version": "2.00",
+      "size": 42,
+      "pos": 175,
+      "order": 1
+    },
+    "FxdParams": {
+      "name": "FxdParams",
+      "version": "2.00",
+      "size": 92,
+      "pos": 217,
+      "order": 2
+    },
+    "KeyEvents": {
+      "name": "KeyEvents",
+      "version": "2.00",
+      "size": 386,
+      "pos": 309,
+      "order": 3
+    },
+    "DataPts": {
+      "name": "DataPts",
+      "version": "2.00",
+      "size": 31364,
+      "pos": 695,
+      "order": 4
+    },
+    "ExfoNewProprietaryBlock 01": {
+      "name": "ExfoNewProprietaryBlock 01",
+      "version": "2.00",
+      "size": 113914,
+      "pos": 32059,
+      "order": 5
+    },
+    "Cksum": {
+      "name": "Cksum",
+      "version": "2.00",
+      "size": 8,
+      "pos": 145973,
+      "order": 6
+    }
+  },
+  "GenParams": {
+    "language": "EN",
+    "cable ID": " ",
+    "fiber ID": " ",
+    "fiber type": "G.652 (standard SMF)",
+    "wavelength": "1625 nm",
+    "location A": " ",
+    "location B": " ",
+    "cable code/fiber type": " ",
+    "build condition": "BC (as-built)",
+    "user offset": "0",
+    "user offset distance": "0",
+    "operator": " ",
+    "comments": " "
+  },
+  "SupParams": {
+    "supplier": " ",
+    "OTDR": " ",
+    "OTDR S/N": " ",
+    "module": "OTM-700-NS2257",
+    "module S/N": "947986",
+    "software": " ",
+    "other": " "
+  },
+  "FxdParams": {
+    "date/time": "Fri Dec 16 14:33:33 2016 (1481898813 sec)",
+    "unit": "mt (meters)",
+    "wavelength": "1630.0 nm",
+    "acquisition offset": 0,
+    "acquisition offset distance": 0,
+    "number of pulse width entries": 1,
+    "pulse width": "30 ns",
+    "sample spacing": "0.003125 usec",
+    "num data points": 15672,
+    "index": "1.468700",
+    "BC": "-82.60 dB",
+    "num averages": 1224,
+    "averaging time": "1 sec",
+    "range": 9.996824150983864,
+    "acquisition range distance": 3125002,
+    "front panel offset": 0,
+    "noise floor level": 45003,
+    "noise floor scaling factor": 1000,
+    "power offset first point": 0,
+    "loss thr": "0.020 dB",
+    "refl thr": "-65.535 dB",
+    "EOT thr": "4.000 dB",
+    "trace type": "ST[standard trace]",
+    "X1": 0,
+    "Y1": 0,
+    "X2": 0,
+    "Y2": 0,
+    "resolution": 0.6378780086130592
+  },
+  "KeyEvents": {
+    "num events": 8,
+    "event 1": {
+      "type": "1F9999LS {auto} reflection",
+      "distance": "0.000",
+      "slope": "0.000",
+      "splice loss": "0.000",
+      "refl loss": "-60.471",
+      "comments": " ",
+      "end of prev": "0.000",
+      "start of curr": "0.000",
+      "end of curr": "0.009",
+      "start of next": "0.018",
+      "peak": "0.004"
+    },
+    "event 2": {
+      "type": "1F9999LS {auto} reflection",
+      "distance": "0.018",
+      "slope": "0.100",
+      "splice loss": "0.514",
+      "refl loss": "-52.877",
+      "comments": " ",
+      "end of prev": "0.009",
+      "start of curr": "0.018",
+      "end of curr": "0.026",
+      "start of next": "0.059",
+      "peak": "0.021"
+    },
+    "event 3": {
+      "type": "1F9999LS {auto} reflection",
+      "distance": "0.059",
+      "slope": "0.617",
+      "splice loss": "0.821",
+      "refl loss": "-58.825",
+      "comments": " ",
+      "end of prev": "0.026",
+      "start of curr": "0.059",
+      "end of curr": "0.066",
+      "start of next": "0.070",
+      "peak": "0.063"
+    },
+    "event 4": {
+      "type": "2F9999LS {auto} multiple",
+      "distance": "0.070",
+      "slope": "1.900",
+      "splice loss": "1.714",
+      "refl loss": "-23.226",
+      "comments": " ",
+      "end of prev": "0.066",
+      "start of curr": "0.070",
+      "end of curr": "0.212",
+      "start of next": "4.623",
+      "peak": "0.071"
+    },
+    "event 5": {
+      "type": "2E9999LS {auto} multiple",
+      "distance": "4.623",
+      "slope": "0.343",
+      "splice loss": "0.000",
+      "refl loss": "-16.843",
+      "comments": " ",
+      "end of prev": "0.212",
+      "start of curr": "4.623",
+      "end of curr": "5.176",
+      "start of next": "9.168",
+      "peak": "4.628"
+    },
+    "event 6": {
+      "type": "1F9999LS {auto} reflection",
+      "distance": "9.168",
+      "slope": "0.302",
+      "splice loss": "0.000",
+      "refl loss": "-47.996",
+      "comments": " ",
+      "end of prev": "5.176",
+      "start of curr": "9.168",
+      "end of curr": "9.177",
+      "start of next": "9.179",
+      "peak": "9.173"
+    },
+    "event 7": {
+      "type": "1F9999LS {auto} reflection",
+      "distance": "9.179",
+      "slope": "0.100",
+      "splice loss": "0.000",
+      "refl loss": "-26.618",
+      "comments": " ",
+      "end of prev": "9.177",
+      "start of curr": "9.179",
+      "end of curr": "9.189",
+      "start of next": "9.189",
+      "peak": "9.183"
+    },
+    "event 8": {
+      "type": "1F9999LS {auto} reflection",
+      "distance": "9.189",
+      "slope": "0.100",
+      "splice loss": "0.000",
+      "refl loss": "-56.449",
+      "comments": " ",
+      "end of prev": "9.189",
+      "start of curr": "9.189",
+      "end of curr": "9.196",
+      "start of next": "9.996",
+      "peak": "9.194"
+    },
+    "Summary": {
+      "total loss": 4.66,
+      "ORL": 21.06,
+      "loss start": 0.0,
+      "loss end": 4.62334,
+      "ORL start": 0.0,
+      "ORL finish": 4.62334
+    }
+  },
+  "DataPts": {
+    "_datapts_params": {
+      "xscaling": 1,
+      "offset": "STV"
+    },
+    "num data points": 15672,
+    "num traces": 1,
+    "num data points 2": 15672,
+    "scaling factor": 1.0,
+    "max before offset": 63.999,
+    "min before offset": 24.756
+  },
+  "Cksum": {
+    "checksum_ours": 26958,
+    "checksum": 61572,
+    "match": false
+  }
+}

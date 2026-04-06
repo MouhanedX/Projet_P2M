@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { kpisAPI, alarmsAPI, routesAPI, otdrAPI, rtusAPI } from '../services/api';
 import websocketService from '../services/websocket';
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import KpiCard from './KpiCard';
 import AlarmList from './AlarmList';
 import NetworkStatusChart from './NetworkStatusChart';
@@ -99,6 +100,7 @@ function Dashboard() {
   const [recentTests, setRecentTests] = useState([]);
   const [selectedRouteHistory, setSelectedRouteHistory] = useState(null);
   const [routeHistoryAlarms, setRouteHistoryAlarms] = useState([]);
+  const [routeHistoryTests, setRouteHistoryTests] = useState([]);
   const [routeHistoryLoading, setRouteHistoryLoading] = useState(false);
 
   useEffect(() => {
@@ -278,12 +280,19 @@ function Dashboard() {
     setSelectedRouteHistory(route);
     setRouteHistoryLoading(true);
     setRouteHistoryAlarms([]);
+    setRouteHistoryTests([]);
     try {
-      const response = await alarmsAPI.getByRoute(route.routeId);
-      setRouteHistoryAlarms(Array.isArray(response.data) ? response.data : []);
+      const [alarmsResponse, testsResponse] = await Promise.all([
+        alarmsAPI.getByRoute(route.routeId),
+        otdrAPI.getRecent(40, route.routeId)
+      ]);
+
+      setRouteHistoryAlarms(Array.isArray(alarmsResponse.data) ? alarmsResponse.data : []);
+      setRouteHistoryTests(Array.isArray(testsResponse.data) ? testsResponse.data : []);
     } catch (error) {
       console.error(`Error loading alarm history for route ${route.routeId}:`, error);
       setRouteHistoryAlarms([]);
+      setRouteHistoryTests([]);
     } finally {
       setRouteHistoryLoading(false);
     }
@@ -292,6 +301,7 @@ function Dashboard() {
   const closeRouteHistory = () => {
     setSelectedRouteHistory(null);
     setRouteHistoryAlarms([]);
+    setRouteHistoryTests([]);
     setRouteHistoryLoading(false);
   };
 
@@ -331,6 +341,24 @@ function Dashboard() {
   const selectedRtuRoutes = selectedRtuDetails?.routes?.length
     ? selectedRtuDetails.routes
     : fallbackSelectedRoutes;
+  const routePowerHistoryData = [...routeHistoryTests]
+    .filter((test) => typeof test.averagePowerDb === 'number')
+    .sort((a, b) => {
+      const aTime = parseTimestamp(a.measuredAt)?.getTime() || 0;
+      const bTime = parseTimestamp(b.measuredAt)?.getTime() || 0;
+      return aTime - bTime;
+    })
+    .map((test, index) => {
+      const measuredAt = parseTimestamp(test.measuredAt);
+      return {
+        index: index + 1,
+        label: measuredAt ? measuredAt.toLocaleTimeString() : `T${index + 1}`,
+        power: Number(test.averagePowerDb.toFixed(3)),
+        variation: typeof test.powerVariationDb === 'number'
+          ? Number(test.powerVariationDb.toFixed(3))
+          : null,
+      };
+    });
 
   return (
     <div className="min-h-screen bg-white">
@@ -487,7 +515,7 @@ function Dashboard() {
                 <div className="w-full max-w-6xl max-h-[85vh] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
                   <div className="border-b border-slate-200 px-5 py-4 flex items-center justify-between">
                     <div>
-                      <h4 className="text-lg font-bold text-slate-900">Route Alarm History</h4>
+                      <h4 className="text-lg font-bold text-slate-900">Route OTDR and Alarm History</h4>
                       <p className="text-sm text-slate-600 mt-1">
                         {selectedRouteHistory.routeId} • {selectedRouteHistory.routeName} • {selectedRouteHistory.rtuId}
                       </p>
@@ -502,51 +530,101 @@ function Dashboard() {
 
                   <div className="px-5 py-4 overflow-auto max-h-[70vh]">
                     {routeHistoryLoading ? (
-                      <p className="text-sm text-slate-600">Loading alarm history...</p>
-                    ) : routeHistoryAlarms.length === 0 ? (
-                      <p className="text-sm text-slate-600">No alarms found for this route.</p>
+                      <p className="text-sm text-slate-600">Loading route history...</p>
                     ) : (
-                      <table className="min-w-full text-sm">
-                        <thead>
-                          <tr className="text-left text-slate-500 border-b border-slate-200">
-                            <th className="pb-2 pr-4">Status</th>
-                            <th className="pb-2 pr-4">Type</th>
-                            <th className="pb-2 pr-4">Cause</th>
-                            <th className="pb-2 pr-4">Location</th>
-                            <th className="pb-2 pr-4">Attenuation</th>
-                            <th className="pb-2 pr-4">Start Time</th>
-                            <th className="pb-2 pr-4">End Time</th>
-                            <th className="pb-2">Technician</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {routeHistoryAlarms.map((alarm) => {
-                            const lifecycle = alarm.lifecycle || {};
-                            const details = alarm.details || {};
-                            const start = parseTimestamp(lifecycle.createdAt || lifecycle.created_at);
-                            const end = parseTimestamp(lifecycle.resolvedAt || lifecycle.resolved_at);
+                      <div className="space-y-6">
+                        <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                            <h5 className="text-sm font-bold text-indigo-900">Puissance Variation (dB)</h5>
+                            <span className="text-xs font-medium text-indigo-700">{routeHistoryTests.length} tests</span>
+                          </div>
 
-                            return (
-                              <tr key={alarm.alarmId || alarm.alarm_id || alarm.id} className="border-b border-slate-100">
-                                <td className="py-2 pr-4">
-                                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${alarm.status === 'RESOLVED' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                                    {alarm.status}
-                                  </span>
-                                </td>
-                                <td className="py-2 pr-4 text-slate-700">{alarm.alarmType || alarm.alarm_type || '-'}</td>
-                                <td className="py-2 pr-4 text-slate-700">{details.faultCause || details.fault_cause || details.eventType || details.event_type || '-'}</td>
-                                <td className="py-2 pr-4 text-slate-700">{details.faultLocationDescription || details.fault_location_description || details.eventLocationKm || details.event_location_km || '-'}</td>
-                                <td className="py-2 pr-4 text-slate-700">
-                                  {details.attenuationDb ?? details.attenuation_db ?? details.totalLossDb ?? details.total_loss_db ?? '-'}
-                                </td>
-                                <td className="py-2 pr-4 text-slate-600">{start ? start.toLocaleString() : '-'}</td>
-                                <td className="py-2 pr-4 text-slate-600">{end ? end.toLocaleString() : '-'}</td>
-                                <td className="py-2 text-slate-700">{lifecycle.assignedBy || lifecycle.assigned_by || '-'}</td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
+                          {routePowerHistoryData.length === 0 ? (
+                            <p className="text-sm text-slate-600">No OTDR puissance history available for this route yet.</p>
+                          ) : (
+                            <div className="h-64">
+                              <ResponsiveContainer width="100%" height="100%">
+                                <LineChart data={routePowerHistoryData}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
+                                  <XAxis dataKey="label" stroke="#475569" tick={{ fontSize: 12 }} />
+                                  <YAxis
+                                    dataKey="power"
+                                    stroke="#1d4ed8"
+                                    tick={{ fontSize: 12 }}
+                                    domain={['dataMin - 0.5', 'dataMax + 0.5']}
+                                    label={{ value: 'Puissance (dB)', angle: -90, position: 'insideLeft' }}
+                                  />
+                                  <Tooltip
+                                    formatter={(value, name) => {
+                                      if (name === 'power') {
+                                        return [`${Number(value).toFixed(3)} dB`, 'Puissance'];
+                                      }
+                                      return [`${Number(value).toFixed(3)} dB`, 'Variation'];
+                                    }}
+                                  />
+                                  <Line
+                                    type="monotone"
+                                    dataKey="power"
+                                    stroke="#1d4ed8"
+                                    strokeWidth={2.5}
+                                    dot={{ r: 3, fill: '#1d4ed8' }}
+                                    activeDot={{ r: 5 }}
+                                  />
+                                </LineChart>
+                              </ResponsiveContainer>
+                            </div>
+                          )}
+                        </div>
+
+                        <div>
+                          <h5 className="text-sm font-bold text-slate-900 mb-3">Alarm History</h5>
+                          {routeHistoryAlarms.length === 0 ? (
+                            <p className="text-sm text-slate-600">No alarms found for this route.</p>
+                          ) : (
+                            <table className="min-w-full text-sm">
+                              <thead>
+                                <tr className="text-left text-slate-500 border-b border-slate-200">
+                                  <th className="pb-2 pr-4">Status</th>
+                                  <th className="pb-2 pr-4">Type</th>
+                                  <th className="pb-2 pr-4">Cause</th>
+                                  <th className="pb-2 pr-4">Location</th>
+                                  <th className="pb-2 pr-4">Attenuation</th>
+                                  <th className="pb-2 pr-4">Start Time</th>
+                                  <th className="pb-2 pr-4">End Time</th>
+                                  <th className="pb-2">Technician</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {routeHistoryAlarms.map((alarm) => {
+                                  const lifecycle = alarm.lifecycle || {};
+                                  const details = alarm.details || {};
+                                  const start = parseTimestamp(lifecycle.createdAt || lifecycle.created_at);
+                                  const end = parseTimestamp(lifecycle.resolvedAt || lifecycle.resolved_at);
+
+                                  return (
+                                    <tr key={alarm.alarmId || alarm.alarm_id || alarm.id} className="border-b border-slate-100">
+                                      <td className="py-2 pr-4">
+                                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${alarm.status === 'RESOLVED' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                                          {alarm.status}
+                                        </span>
+                                      </td>
+                                      <td className="py-2 pr-4 text-slate-700">{alarm.alarmType || alarm.alarm_type || '-'}</td>
+                                      <td className="py-2 pr-4 text-slate-700">{details.faultCause || details.fault_cause || details.eventType || details.event_type || '-'}</td>
+                                      <td className="py-2 pr-4 text-slate-700">{details.faultLocationDescription || details.fault_location_description || details.eventLocationKm || details.event_location_km || '-'}</td>
+                                      <td className="py-2 pr-4 text-slate-700">
+                                        {details.attenuationDb ?? details.attenuation_db ?? details.totalLossDb ?? details.total_loss_db ?? '-'}
+                                      </td>
+                                      <td className="py-2 pr-4 text-slate-600">{start ? start.toLocaleString() : '-'}</td>
+                                      <td className="py-2 pr-4 text-slate-600">{end ? end.toLocaleString() : '-'}</td>
+                                      <td className="py-2 text-slate-700">{lifecycle.assignedBy || lifecycle.assigned_by || '-'}</td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>

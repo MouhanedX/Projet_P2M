@@ -1,11 +1,12 @@
 import axios from 'axios';
 
-const EMS_API_URL = import.meta.env.VITE_EMS_API_URL || 'http://localhost:8080/api';
-const RTU_API_URL = import.meta.env.VITE_RTU_API_URL || 'http://localhost:8001/api';
+const EMS_API_URL = import.meta.env.VITE_EMS_API_URL || '/api';
+const RTU_API_URL = import.meta.env.VITE_RTU_API_URL || '/rtu-api/api';
 
 // EMS Backend API
 const emsApi = axios.create({
   baseURL: EMS_API_URL,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json'
   }
@@ -14,10 +15,18 @@ const emsApi = axios.create({
 // RTU Emulator API (Multi-RTU)
 const rtuApi = axios.create({
   baseURL: RTU_API_URL,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json'
   }
 });
+
+// Session Auth API - From EMS Backend
+export const authAPI = {
+  login: (payload) => emsApi.post('/auth/login', payload),
+  me: () => emsApi.get('/auth/me'),
+  logout: () => emsApi.post('/auth/logout')
+};
 
 // RTUs API - Get all RTUs from database via RTU Emulator
 export const rtusAPI = {
@@ -27,7 +36,10 @@ export const rtusAPI = {
   getRouteDetails: (rtuId, routeId) => rtuApi.get(`/rtu/${rtuId}/routes/${routeId}`),
   startMonitoring: (rtuId) => rtuApi.post(`/rtu/${rtuId}/start`),
   stopMonitoring: (rtuId) => rtuApi.post(`/rtu/${rtuId}/stop`),
-  testRoute: (rtuId, routeId) => rtuApi.post(`/rtu/${rtuId}/test/${routeId}`)
+  testRoute: (rtuId, routeId) => rtuApi.post(`/rtu/${rtuId}/test/${routeId}`),
+  launchManualTest: (rtuId, routeId) => rtuApi.post(`/rtu/${rtuId}/test/${routeId}`),
+  getOtdrConfig: (rtuId) => rtuApi.get(`/rtu/${rtuId}/otdr-config`),
+  updateOtdrConfig: (rtuId, payload) => rtuApi.put(`/rtu/${rtuId}/otdr-config`, payload)
 };
 
 // Alarms API - From EMS Backend

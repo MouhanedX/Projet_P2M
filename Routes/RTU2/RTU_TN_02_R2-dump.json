@@ -1,0 +1,311 @@
+{
+  "filename": "RTU_TN_02_R2.sor",
+  "format": 2,
+  "version": "2.00",
+  "mapblock": {
+    "nbytes": 135,
+    "nblocks": 7
+  },
+  "blocks": {
+    "GenParams": {
+      "name": "GenParams",
+      "version": "2.00",
+      "size": 164,
+      "pos": 135,
+      "order": 0
+    },
+    "SupParams": {
+      "name": "SupParams",
+      "version": "2.00",
+      "size": 42,
+      "pos": 299,
+      "order": 1
+    },
+    "FxdParams": {
+      "name": "FxdParams",
+      "version": "2.00",
+      "size": 92,
+      "pos": 341,
+      "order": 2
+    },
+    "KeyEvents": {
+      "name": "KeyEvents",
+      "version": "2.00",
+      "size": 606,
+      "pos": 433,
+      "order": 3
+    },
+    "DataPts": {
+      "name": "DataPts",
+      "version": "2.00",
+      "size": 19606,
+      "pos": 1039,
+      "order": 4
+    },
+    "ExfoNewProprietaryBlock 01": {
+      "name": "ExfoNewProprietaryBlock 01",
+      "version": "2.00",
+      "size": 107539,
+      "pos": 20645,
+      "order": 5
+    },
+    "Cksum": {
+      "name": "Cksum",
+      "version": "2.00",
+      "size": 8,
+      "pos": 128184,
+      "order": 6
+    }
+  },
+  "GenParams": {
+    "language": "EN",
+    "cable ID": " ",
+    "fiber ID": " ",
+    "fiber type": "G.652 (standard SMF)",
+    "wavelength": "1625 nm",
+    "location A": " ",
+    "location B": " ",
+    "cable code/fiber type": " ",
+    "build condition": "BC (as-built)",
+    "user offset": "0",
+    "user offset distance": "0",
+    "operator": " ",
+    "comments": "R05: Bardo - Omrane Sup (4.7) Ettadhamon (7.3) Mnihla (16.1) Sabalet Ben Amor (23.1) K. Andalous (xxxx) Z I K. Andalous (xxx)"
+  },
+  "SupParams": {
+    "supplier": " ",
+    "OTDR": " ",
+    "OTDR S/N": " ",
+    "module": "OTM-700-NS2257",
+    "module S/N": "947985",
+    "software": " ",
+    "other": " "
+  },
+  "FxdParams": {
+    "date/time": "Sat Feb 11 15:55:05 2017 (1486828505 sec)",
+    "unit": "mt (meters)",
+    "wavelength": "1629.4 nm",
+    "acquisition offset": 0,
+    "acquisition offset distance": 0,
+    "number of pulse width entries": 1,
+    "pulse width": "2500 ns",
+    "sample spacing": "0.025 usec",
+    "num data points": 9793,
+    "index": "1.468700",
+    "BC": "-82.60 dB",
+    "num averages": 5071,
+    "averaging time": "4 sec",
+    "range": 49.97391470678151,
+    "acquisition range distance": 124998574,
+    "front panel offset": 0,
+    "noise floor level": 47403,
+    "noise floor scaling factor": 1000,
+    "power offset first point": 0,
+    "loss thr": "0.020 dB",
+    "refl thr": "-65.535 dB",
+    "EOT thr": "10.000 dB",
+    "trace type": "ST[standard trace]",
+    "X1": 0,
+    "Y1": 0,
+    "X2": 0,
+    "Y2": 0,
+    "resolution": 5.103024068904474
+  },
+  "KeyEvents": {
+    "num events": 13,
+    "event 1": {
+      "type": "2F9999LS {auto} multiple",
+      "distance": "0.000",
+      "slope": "0.000",
+      "splice loss": "0.000",
+      "refl loss": "-32.506",
+      "comments": " ",
+      "end of prev": "0.000",
+      "start of curr": "0.000",
+      "end of curr": "0.964",
+      "start of next": "1.184",
+      "peak": "0.168"
+    },
+    "event 2": {
+      "type": "0F9999LS {auto} loss/drop/gain",
+      "distance": "1.184",
+      "slope": "0.305",
+      "splice loss": "1.370",
+      "refl loss": "0.000",
+      "comments": " ",
+      "end of prev": "0.964",
+      "start of curr": "1.184",
+      "end of curr": "2.051",
+      "start of next": "2.398",
+      "peak": "1.184"
+    },
+    "event 3": {
+      "type": "0F9999LS {auto} loss/drop/gain",
+      "distance": "2.398",
+      "slope": "0.191",
+      "splice loss": "1.243",
+      "refl loss": "0.000",
+      "comments": " ",
+      "end of prev": "2.051",
+      "start of curr": "2.398",
+      "end of curr": "3.235",
+      "start of next": "4.802",
+      "peak": "2.398"
+    },
+    "event 4": {
+      "type": "1F9999LS {auto} reflection",
+      "distance": "4.802",
+      "slope": "0.614",
+      "splice loss": "0.230",
+      "refl loss": "-51.907",
+      "comments": " ",
+      "end of prev": "3.235",
+      "start of curr": "4.802",
+      "end of curr": "5.134",
+      "start of next": "6.185",
+      "peak": "4.873"
+    },
+    "event 5": {
+      "type": "0F9999LS {auto} loss/drop/gain",
+      "distance": "6.185",
+      "slope": "0.218",
+      "splice loss": "0.182",
+      "refl loss": "0.000",
+      "comments": " ",
+      "end of prev": "5.134",
+      "start of curr": "6.185",
+      "end of curr": "6.476",
+      "start of next": "7.364",
+      "peak": "6.185"
+    },
+    "event 6": {
+      "type": "1F9999LS {auto} reflection",
+      "distance": "7.364",
+      "slope": "0.220",
+      "splice loss": "0.360",
+      "refl loss": "-23.139",
+      "comments": " ",
+      "end of prev": "6.476",
+      "start of curr": "7.364",
+      "end of curr": "7.777",
+      "start of next": "9.430",
+      "peak": "7.471"
+    },
+    "event 7": {
+      "type": "0F9999LS {auto} loss/drop/gain",
+      "distance": "9.430",
+      "slope": "0.313",
+      "splice loss": "0.127",
+      "refl loss": "0.000",
+      "comments": " ",
+      "end of prev": "7.777",
+      "start of curr": "9.430",
+      "end of curr": "9.675",
+      "start of next": "11.436",
+      "peak": "9.430"
+    },
+    "event 8": {
+      "type": "0F9999LS {auto} loss/drop/gain",
+      "distance": "11.436",
+      "slope": "0.265",
+      "splice loss": "0.121",
+      "refl loss": "0.000",
+      "comments": " ",
+      "end of prev": "9.675",
+      "start of curr": "11.436",
+      "end of curr": "11.701",
+      "start of next": "14.554",
+      "peak": "11.436"
+    },
+    "event 9": {
+      "type": "0F9999LS {auto} loss/drop/gain",
+      "distance": "14.554",
+      "slope": "0.200",
+      "splice loss": "0.072",
+      "refl loss": "0.000",
+      "comments": " ",
+      "end of prev": "11.701",
+      "start of curr": "14.554",
+      "end of curr": "14.896",
+      "start of next": "16.177",
+      "peak": "14.554"
+    },
+    "event 10": {
+      "type": "1F9999LS {auto} reflection",
+      "distance": "16.177",
+      "slope": "0.288",
+      "splice loss": "14.763",
+      "refl loss": "-16.980",
+      "comments": " ",
+      "end of prev": "14.896",
+      "start of curr": "16.177",
+      "end of curr": "17.656",
+      "start of next": "22.111",
+      "peak": "16.268"
+    },
+    "event 11": {
+      "type": "1F9999LS {auto} reflection",
+      "distance": "23.505",
+      "slope": "0.427",
+      "splice loss": "0.000",
+      "refl loss": "-43.572",
+      "comments": " ",
+      "end of prev": "22.438",
+      "start of curr": "23.505",
+      "end of curr": "23.923",
+      "start of next": "24.979",
+      "peak": "23.668"
+    },
+    "event 12": {
+      "type": "1F9999LS {auto} reflection",
+      "distance": "24.979",
+      "slope": "0.565",
+      "splice loss": "0.000",
+      "refl loss": "-25.626",
+      "comments": " ",
+      "end of prev": "23.923",
+      "start of curr": "24.979",
+      "end of curr": "25.490",
+      "start of next": "30.491",
+      "peak": "25.163"
+    },
+    "event 13": {
+      "type": "1E9999LS {auto} reflection",
+      "distance": "32.307",
+      "slope": "0.770",
+      "splice loss": "0.000",
+      "refl loss": "-36.621",
+      "comments": " ",
+      "end of prev": "27.306",
+      "start of curr": "32.307",
+      "end of curr": "32.634",
+      "start of next": "37.635",
+      "peak": "32.486"
+    },
+    "Summary": {
+      "total loss": 32.975,
+      "ORL": 23.816,
+      "loss start": 0.0,
+      "loss end": 32.307245,
+      "ORL start": 0.0,
+      "ORL finish": 32.307245
+    }
+  },
+  "DataPts": {
+    "_datapts_params": {
+      "xscaling": 1,
+      "offset": "STV"
+    },
+    "num data points": 9793,
+    "num traces": 1,
+    "num data points 2": 9793,
+    "scaling factor": 1.0,
+    "max before offset": 63.999,
+    "min before offset": 18.086
+  },
+  "Cksum": {
+    "checksum_ours": 43151,
+    "checksum": 30716,
+    "match": false
+  }
+}

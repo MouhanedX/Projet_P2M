@@ -1,6 +1,6 @@
-import { Wifi, WifiOff } from 'lucide-react';
+import { LogOut, UserCircle2, Wifi, WifiOff } from 'lucide-react';
 
-function Header({ wsConnected }) {
+function Header({ wsConnected, username, onLogout }) {
   return (
     <header className="bg-white shadow-sm border-b border-gray-200">
       <div className="w-full px-4 sm:px-6 lg:px-8">
@@ -18,6 +18,11 @@ function Header({ wsConnected }) {
           </div>
 
           <div className="flex items-center space-x-4">
+            <div className="hidden md:flex items-center space-x-2 rounded-lg bg-slate-100 px-3 py-2">
+              <UserCircle2 className="w-4 h-4 text-slate-600" />
+              <span className="text-sm text-slate-700 font-medium">{username || 'operator'}</span>
+            </div>
+
             <div className="flex items-center space-x-2">
               {wsConnected ? (
                 <>
@@ -44,6 +49,14 @@ function Header({ wsConnected }) {
                 })}
               </span>
             </div>
+
+            <button
+              onClick={onLogout}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+            >
+              <LogOut className="w-4 h-4" />
+              Logout
+            </button>
           </div>
         </div>
       </div>
