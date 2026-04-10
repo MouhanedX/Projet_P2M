@@ -425,18 +425,35 @@ public class AlarmService {
             default -> "UNKNOWN";
         };
 
+        Double attenuationDb = request.getAttenuationDb();
+        Integer routeWavelengthNm = routeRepository.findByRouteId(alarm.getRouteId())
+                .map(Route::getCurrentCondition)
+                .map(Route.CurrentCondition::getWavelengthNm)
+                .orElse(1550);
+        Double baselineAveragePowerDb = routeRepository.findByRouteId(alarm.getRouteId())
+                .map(Route::getCurrentCondition)
+                .map(Route.CurrentCondition::getAveragePowerDb)
+                .orElse(null);
+
+        Double averagePowerDb = null;
+        if (baselineAveragePowerDb != null && attenuationDb != null) {
+            averagePowerDb = Math.max(0.0, baselineAveragePowerDb - attenuationDb);
+        }
+
         OtdrTestResult result = OtdrTestResult.builder()
                 .routeId(alarm.getRouteId())
                 .rtuId(alarm.getRtuId())
                 .testMode("ManualAlarm")
                 .pulseWidthNs(1000)
                 .dynamicRangeDb(40.0)
-                .wavelengthNm(1550)
+                .wavelengthNm(routeWavelengthNm)
                 .testResult("Fail")
                 .totalLossDb(request.getAttenuationDb())
                 .eventCount(1)
                 .faultDistanceKm(request.getFaultLocationKm())
                 .status(status)
+                .averagePowerDb(averagePowerDb)
+                .powerVariationDb(attenuationDb)
                 .measuredAt(measuredAt)
                 .build();
 

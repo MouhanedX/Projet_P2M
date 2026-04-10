@@ -515,12 +515,33 @@ function TestControlPage({ configOnly = false }) {
         repairDurationSeconds
       });
 
+      let faultSyncFailed = false;
+      try {
+        await rtusAPI.injectRouteFault(form.rtuId, form.routeId, {
+          faultType: form.faultType,
+          repairDurationSeconds,
+          attenuationDb,
+          generateAlarm: false,
+          sendTestReport: false
+        });
+      } catch (faultError) {
+        faultSyncFailed = true;
+        console.error('Manual alarm created but RTU fault sync failed:', faultError);
+      }
+
       await loadData();
 
-      setFeedback({
-        type: 'success',
-        text: `Manual alarm created for ${form.routeId}. Auto-repair timer will start after acknowledgment.`
-      });
+      if (faultSyncFailed) {
+        setFeedback({
+          type: 'error',
+          text: `Manual alarm created for ${form.routeId}, but RTU fault synchronization failed.`
+        });
+      } else {
+        setFeedback({
+          type: 'success',
+          text: `Manual alarm created for ${form.routeId}. Power drop and variation now follow your attenuation (${attenuationDb.toFixed(2)} dB). Auto-recovery countdown starts after alarm acknowledgment and lasts ${repairDurationSeconds}s.`
+        });
+      }
     } catch (error) {
       console.error('Failed to create manual alarm:', error);
       setFeedback({

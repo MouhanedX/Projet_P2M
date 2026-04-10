@@ -49,6 +49,8 @@ class OTDRSimulator:
         inject_fault: bool = False,
         fault_type: str = "normal",
         distance_km: float = None,
+        fixed_fault_power_db: float = None,
+        fault_power_penalty_db: float = None,
     ) -> OTDRTrace:
         """
         Generate an OTDR trace from route reference files when available.
@@ -75,7 +77,15 @@ class OTDRSimulator:
             average_power_db, variation_db = self._next_average_power(route_id, reference.baseline_avg_power_db)
 
             if inject_fault:
-                average_power_db -= self._fault_power_penalty(fault_type)
+                if fixed_fault_power_db is not None:
+                    average_power_db = fixed_fault_power_db
+                else:
+                    penalty_db = (
+                        fault_power_penalty_db
+                        if fault_power_penalty_db is not None
+                        else self._fault_power_penalty(fault_type)
+                    )
+                    average_power_db -= penalty_db
                 status = self._determine_status(total_loss, events)
             else:
                 status = TraceStatus.NORMAL
@@ -110,7 +120,15 @@ class OTDRSimulator:
         average_power_db, variation_db = self._next_average_power(route_id, baseline_power)
 
         if inject_fault:
-            average_power_db -= self._fault_power_penalty(fault_type)
+            if fixed_fault_power_db is not None:
+                average_power_db = fixed_fault_power_db
+            else:
+                penalty_db = (
+                    fault_power_penalty_db
+                    if fault_power_penalty_db is not None
+                    else self._fault_power_penalty(fault_type)
+                )
+                average_power_db -= penalty_db
             status = self._determine_status(total_loss, events)
         else:
             status = TraceStatus.NORMAL
@@ -210,6 +228,63 @@ class OTDRSimulator:
             return bundle
         except Exception:
             return None
+
+    def get_reference_trace_profile(self, route_id: str, max_points: int = 1200) -> dict:
+        normalized_route_id = self._normalize_route_id(route_id)
+        reference = self._get_route_reference(normalized_route_id)
+
+        if reference is None:
+            return {
+                "route_id": normalized_route_id,
+                "measurement_reference_file": None,
+                "total_points": 0,
+                "point_count": 0,
+                "distance_range_km": None,
+                "points": [],
+            }
+
+        sampled_points = self._sample_trace_points(reference.trace_points, max_points)
+        points_payload = [
+            {
+                "distance_km": round(distance_km, 6),
+                "power_db": round(power_db, 6),
+            }
+            for distance_km, power_db in sampled_points
+        ]
+
+        if reference.trace_points:
+            min_distance = min(point[0] for point in reference.trace_points)
+            max_distance = max(point[0] for point in reference.trace_points)
+            distance_range_km = {
+                "min": round(min_distance, 6),
+                "max": round(max_distance, 6),
+            }
+        else:
+            distance_range_km = None
+
+        return {
+            "route_id": normalized_route_id,
+            "measurement_reference_file": reference.measurement_file.name,
+            "total_points": len(reference.trace_points),
+            "point_count": len(points_payload),
+            "distance_range_km": distance_range_km,
+            "points": points_payload,
+        }
+
+    @staticmethod
+    def _sample_trace_points(trace_points: List[Tuple[float, float]], max_points: int) -> List[Tuple[float, float]]:
+        if not trace_points:
+            return []
+
+        safe_limit = max(2, int(max_points))
+        if len(trace_points) <= safe_limit:
+            return trace_points
+
+        last_index = len(trace_points) - 1
+        step = last_index / float(safe_limit - 1)
+        sampled_indices = sorted({int(round(index * step)) for index in range(safe_limit)} | {0, last_index})
+
+        return [trace_points[index] for index in sampled_indices]
 
     def _parse_trace_points(self, trace_file: Path) -> List[Tuple[float, float]]:
         points: List[Tuple[float, float]] = []
@@ -330,7 +405,7 @@ class OTDRSimulator:
     def _fault_power_penalty(self, fault_type: str) -> float:
         normalized = (fault_type or "").strip().lower()
         if normalized == "break":
-            return random.uniform(2.0, 4.0)
+            return 5.0
         if normalized == "degradation":
             return random.uniform(0.5, 1.2)
         if normalized == "high_loss_splice":

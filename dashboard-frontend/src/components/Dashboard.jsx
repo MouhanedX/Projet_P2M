@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { kpisAPI, alarmsAPI, routesAPI, otdrAPI } from '../services/api';
+import { kpisAPI, alarmsAPI, routesAPI, otdrAPI, rtusAPI } from '../services/api';
 import websocketService from '../services/websocket';
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import topologyData from '../data/topology-data.json';
 import KpiCard from './KpiCard';
 import AlarmList from './AlarmList';
 import NetworkStatusChart from './NetworkStatusChart';
+import AvailabilityRangeChart from './AvailabilityRangeChart';
 import { AlertCircle, Activity, Router, Wifi, WifiOff, ShieldCheck, Radar, ExternalLink, History, X } from 'lucide-react';
 
 const TOPOLOGY_COLORS = ['#00d4aa', '#0084ff', '#00ff88', '#f97316', '#e11d48', '#a855f7', '#ffb700'];
@@ -70,8 +71,93 @@ const extractRtuHealth = (test) => {
   };
 };
 
+const toFiniteNumber = (value) => {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : null;
+};
+
+const extractActiveRouteFault = (routeAlarms) => {
+  const activeCandidates = (Array.isArray(routeAlarms) ? routeAlarms : [])
+    .filter((alarm) => ['ACTIVE', 'ACKNOWLEDGED'].includes(String(alarm?.status || '').toUpperCase()));
+
+  if (activeCandidates.length === 0) {
+    return null;
+  }
+
+  const sorted = [...activeCandidates].sort((left, right) => {
+    const leftTimestamp = parseTimestamp(
+      left?.updatedAt
+      || left?.updated_at
+      || left?.lifecycle?.createdAt
+      || left?.lifecycle?.created_at
+    )?.getTime() || 0;
+
+    const rightTimestamp = parseTimestamp(
+      right?.updatedAt
+      || right?.updated_at
+      || right?.lifecycle?.createdAt
+      || right?.lifecycle?.created_at
+    )?.getTime() || 0;
+
+    return rightTimestamp - leftTimestamp;
+  });
+
+  const selectedAlarm = sorted[0];
+  const details = selectedAlarm?.details || {};
+
+  return {
+    alarmId: selectedAlarm?.alarmId || selectedAlarm?.alarm_id || selectedAlarm?.id || null,
+    status: String(selectedAlarm?.status || ''),
+    faultDistanceKm: toFiniteNumber(details.eventLocationKm ?? details.event_location_km),
+    attenuationDb: toFiniteNumber(
+      details.attenuationDb
+      ?? details.attenuation_db
+      ?? details.totalLossDb
+      ?? details.total_loss_db
+    ),
+  };
+};
+
+const buildDistanceProfileSeries = (referencePoints, activeFault) => {
+  const hasFaultEffect = Number.isFinite(activeFault?.faultDistanceKm)
+    && Number.isFinite(activeFault?.attenuationDb)
+    && activeFault.attenuationDb > 0;
+
+  return (Array.isArray(referencePoints) ? referencePoints : [])
+    .map((point) => {
+      const distanceKm = toFiniteNumber(
+        point?.distance_km
+        ?? point?.distanceKm
+        ?? point?.x
+      );
+
+      const referencePowerDb = toFiniteNumber(
+        point?.power_db
+        ?? point?.powerDb
+        ?? point?.power
+        ?? point?.y
+      );
+
+      if (distanceKm === null || referencePowerDb === null) {
+        return null;
+      }
+
+      const adjustedPowerDb = hasFaultEffect && distanceKm >= activeFault.faultDistanceKm
+        ? Math.max(0, referencePowerDb - activeFault.attenuationDb)
+        : referencePowerDb;
+
+      return {
+        distanceKm: Number(distanceKm.toFixed(4)),
+        referencePowerDb: Number(referencePowerDb.toFixed(3)),
+        currentPowerDb: Number(adjustedPowerDb.toFixed(3)),
+      };
+    })
+    .filter(Boolean);
+};
+
 function Dashboard({ activeView, setActiveView }) {
   const [kpi, setKpi] = useState(null);
+  const [availabilityHistory, setAvailabilityHistory] = useState([]);
   const [alarms, setAlarms] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -86,6 +172,10 @@ function Dashboard({ activeView, setActiveView }) {
   const [routeHistoryTests, setRouteHistoryTests] = useState([]);
   const [routeHistoryLoading, setRouteHistoryLoading] = useState(false);
   const [routeHistoryGrouping, setRouteHistoryGrouping] = useState('sample');
+  const [routeDistanceTracePoints, setRouteDistanceTracePoints] = useState([]);
+  const [routeDistanceTraceMeta, setRouteDistanceTraceMeta] = useState(null);
+  const [routeDistanceTraceLoading, setRouteDistanceTraceLoading] = useState(false);
+  const [routeActiveFault, setRouteActiveFault] = useState(null);
   const [selectedTopologyRtuId, setSelectedTopologyRtuId] = useState('');
 
   useEffect(() => {
@@ -114,6 +204,7 @@ function Dashboard({ activeView, setActiveView }) {
       kpiSub = websocketService.subscribe('/topic/kpis', (newKpi) => {
         console.log('New KPI received:', newKpi);
         setKpi(newKpi);
+        loadAvailabilityHistory();
         setWsConnected(true);
       });
     };
@@ -131,6 +222,7 @@ function Dashboard({ activeView, setActiveView }) {
     const interval = setInterval(() => {
       console.log('Auto-refresh triggered (2 minutes)');
       loadKpiData();
+      loadAvailabilityHistory();
       loadAlarmStatistics();
       loadActiveAlarms();
       loadRoutes();
@@ -151,6 +243,7 @@ function Dashboard({ activeView, setActiveView }) {
     try {
       await Promise.all([
         loadKpiData(),
+        loadAvailabilityHistory(),
         loadActiveAlarms(),
         loadAlarmStatistics(),
         loadRoutes(),
@@ -169,6 +262,20 @@ function Dashboard({ activeView, setActiveView }) {
       setKpi(response.data);
     } catch (error) {
       console.error('Error loading KPI data:', error);
+    }
+  };
+
+  const loadAvailabilityHistory = async () => {
+    try {
+      const response = await kpisAPI.getHistory({
+        kpiType: 'NETWORK_HEALTH',
+        period: 'REALTIME',
+        hours: 24 * 14,
+      });
+      setAvailabilityHistory(normalizeList(response.data));
+    } catch (error) {
+      console.error('Error loading availability history:', error);
+      setAvailabilityHistory([]);
     }
   };
 
@@ -274,19 +381,54 @@ function Dashboard({ activeView, setActiveView }) {
     }
   };
 
+  const fetchRouteDistanceProfile = async (route) => {
+    const traceResponse = await rtusAPI.getRouteTraceReference(route.rtuId, route.routeId, 1800);
+    const alarmsResponse = await alarmsAPI.getByRoute(route.routeId);
+
+    const tracePayload = traceResponse?.data || {};
+    const referencePoints = Array.isArray(tracePayload.points) ? tracePayload.points : [];
+    const routeAlarms = normalizeList(alarmsResponse?.data);
+
+    return {
+      referencePoints,
+      traceMeta: {
+        measurementReferenceFile: tracePayload.measurement_reference_file || tracePayload.measurementReferenceFile || null,
+        pointCount: Number(tracePayload.point_count || referencePoints.length || 0),
+        totalPoints: Number(tracePayload.total_points || referencePoints.length || 0),
+      },
+      activeFault: extractActiveRouteFault(routeAlarms),
+    };
+  };
+
   const openRouteHistory = async (route) => {
     setSelectedRouteHistory(route);
     setRouteHistoryLoading(true);
     setRouteHistoryTests([]);
     setRouteHistoryGrouping('sample');
+    setRouteDistanceTraceLoading(true);
+    setRouteDistanceTracePoints([]);
+    setRouteDistanceTraceMeta(null);
+    setRouteActiveFault(null);
+
     try {
-      const testsResponse = await otdrAPI.getRecent(300, route.routeId, route.rtuId);
+      const [testsResponse, distanceProfile] = await Promise.all([
+        otdrAPI.getRecent(300, route.routeId, route.rtuId),
+        fetchRouteDistanceProfile(route),
+      ]);
+
       setRouteHistoryTests(normalizeList(testsResponse.data));
+      setRouteDistanceTracePoints(distanceProfile.referencePoints);
+      setRouteDistanceTraceMeta(distanceProfile.traceMeta);
+      setRouteActiveFault(distanceProfile.activeFault);
     } catch (error) {
       console.error(`Error loading OTDR history for route ${route.routeId}:`, error);
       setRouteHistoryTests([]);
+      setRouteDistanceTracePoints([]);
+      setRouteDistanceTraceMeta(null);
+      setRouteActiveFault(null);
     } finally {
       setRouteHistoryLoading(false);
+      setRouteDistanceTraceLoading(false);
     }
   };
 
@@ -295,7 +437,44 @@ function Dashboard({ activeView, setActiveView }) {
     setRouteHistoryTests([]);
     setRouteHistoryLoading(false);
     setRouteHistoryGrouping('sample');
+    setRouteDistanceTracePoints([]);
+    setRouteDistanceTraceMeta(null);
+    setRouteDistanceTraceLoading(false);
+    setRouteActiveFault(null);
   };
+
+  useEffect(() => {
+    if (!selectedRouteHistory?.routeId || !selectedRouteHistory?.rtuId) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const refreshDistanceProfile = async () => {
+      try {
+        const distanceProfile = await fetchRouteDistanceProfile(selectedRouteHistory);
+
+        if (cancelled) {
+          return;
+        }
+
+        setRouteDistanceTracePoints(distanceProfile.referencePoints);
+        setRouteDistanceTraceMeta(distanceProfile.traceMeta);
+        setRouteActiveFault(distanceProfile.activeFault);
+      } catch (error) {
+        if (!cancelled) {
+          console.error(`Error refreshing distance profile for route ${selectedRouteHistory.routeId}:`, error);
+        }
+      }
+    };
+
+    const intervalId = setInterval(refreshDistanceProfile, 8000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [selectedRouteHistory]);
 
   if (loading) {
     return (
@@ -403,6 +582,14 @@ function Dashboard({ activeView, setActiveView }) {
       fiberLengthKm: route?.fiberSpec?.lengthKm,
       activeAlarms: route?.currentCondition?.activeAlarms ?? 0,
     }));
+  const latestRtuHealthMeasuredAt = parseTimestamp(selectedRtuHealth?.measuredAt);
+  const latestRtuHealthMeasuredAtText = latestRtuHealthMeasuredAt
+    ? latestRtuHealthMeasuredAt.toLocaleString()
+    : 'No telemetry yet';
+  const powerSupplyState = selectedRtuHealth?.powerSupplyStatus || null;
+  const powerSupplyIsNormal = typeof powerSupplyState === 'string'
+    ? powerSupplyState.toUpperCase() === 'NORMAL'
+    : false;
   const routeHistorySeriesSource = [...routeHistoryTests]
     .sort((a, b) => {
       const aTime = parseTimestamp(a.measuredAt)?.getTime() || 0;
@@ -489,6 +676,11 @@ function Dashboard({ activeView, setActiveView }) {
           variation: sample.variation,
         }));
 
+  const routeDistanceChartData = buildDistanceProfileSeries(routeDistanceTracePoints, routeActiveFault);
+  const hasRouteDistanceFaultEffect = Number.isFinite(routeActiveFault?.faultDistanceKm)
+    && Number.isFinite(routeActiveFault?.attenuationDb)
+    && routeActiveFault.attenuationDb > 0;
+
   const routeHistoryTableData = [...routeHistoryTests].sort((a, b) => {
     const aTime = parseTimestamp(a.measuredAt)?.getTime() || 0;
     const bTime = parseTimestamp(b.measuredAt)?.getTime() || 0;
@@ -546,6 +738,8 @@ function Dashboard({ activeView, setActiveView }) {
 
         {activeView === 'noc' && (
           <>
+            <AvailabilityRangeChart history={availabilityHistory} />
+
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="card shadow-lg hover:shadow-xl transition-shadow">
                 <h3 className="text-lg font-semibold mb-4 flex items-center space-x-2">
@@ -634,6 +828,105 @@ function Dashboard({ activeView, setActiveView }) {
                       <p className="text-sm text-slate-600">Loading route history...</p>
                     ) : (
                       <div className="space-y-6">
+                        <div className="rounded-xl border border-cyan-100 bg-cyan-50/35 p-4">
+                          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                            <h5 className="text-sm font-bold text-cyan-900">Power vs Distance (trace.dat reference)</h5>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="rounded-full bg-cyan-100 px-2.5 py-1 text-xs font-semibold text-cyan-800">
+                                {routeDistanceTraceMeta?.pointCount ?? 0} points
+                              </span>
+                              <span
+                                className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                  hasRouteDistanceFaultEffect
+                                    ? 'bg-red-100 text-red-700'
+                                    : 'bg-emerald-100 text-emerald-700'
+                                }`}
+                              >
+                                {hasRouteDistanceFaultEffect ? 'Fault profile active' : 'Reference profile'}
+                              </span>
+                            </div>
+                          </div>
+
+                          <p className="mb-3 text-xs text-slate-600">
+                            File: {routeDistanceTraceMeta?.measurementReferenceFile || 'trace.dat not found for this route'}
+                          </p>
+
+                          {routeDistanceTraceLoading ? (
+                            <p className="text-sm text-slate-600">Loading distance profile...</p>
+                          ) : routeDistanceChartData.length === 0 ? (
+                            <p className="text-sm text-slate-600">No trace.dat points available for this route.</p>
+                          ) : (
+                            <div className="h-72">
+                              <ResponsiveContainer width="100%" height="100%">
+                                <LineChart
+                                  data={routeDistanceChartData}
+                                  margin={{ top: 10, right: 14, left: 4, bottom: 8 }}
+                                >
+                                  <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
+                                  <XAxis
+                                    type="number"
+                                    dataKey="distanceKm"
+                                    domain={['dataMin', 'dataMax']}
+                                    stroke="#0f766e"
+                                    tick={{ fontSize: 12 }}
+                                    tickFormatter={(value) => `${Number(value).toFixed(1)} km`}
+                                  />
+                                  <YAxis
+                                    stroke="#0f766e"
+                                    tick={{ fontSize: 12 }}
+                                    tickFormatter={(value) => `${Number(value).toFixed(1)}`}
+                                    label={{ value: 'Power (dB)', angle: -90, position: 'insideLeft' }}
+                                  />
+                                  <Tooltip
+                                    labelFormatter={(value) => `Distance: ${Number(value).toFixed(3)} km`}
+                                    formatter={(value, key) => {
+                                      const label = key === 'referencePowerDb'
+                                        ? 'Reference'
+                                        : 'Current';
+                                      return [`${Number(value).toFixed(3)} dB`, label];
+                                    }}
+                                  />
+                                  <Line
+                                    type="monotone"
+                                    dataKey="referencePowerDb"
+                                    stroke="#64748b"
+                                    strokeWidth={1.8}
+                                    strokeDasharray="5 4"
+                                    dot={false}
+                                    connectNulls
+                                  />
+                                  <Line
+                                    type="monotone"
+                                    dataKey="currentPowerDb"
+                                    stroke={hasRouteDistanceFaultEffect ? '#dc2626' : '#0ea5e9'}
+                                    strokeWidth={2.5}
+                                    dot={false}
+                                    connectNulls
+                                  />
+                                  {Number.isFinite(routeActiveFault?.faultDistanceKm) && (
+                                    <ReferenceLine
+                                      x={routeActiveFault.faultDistanceKm}
+                                      stroke="#dc2626"
+                                      strokeDasharray="4 4"
+                                      label={{ value: 'Fault point', fill: '#b91c1c', fontSize: 11, position: 'insideTopRight' }}
+                                    />
+                                  )}
+                                </LineChart>
+                              </ResponsiveContainer>
+                            </div>
+                          )}
+
+                          {hasRouteDistanceFaultEffect ? (
+                            <p className="mt-3 text-xs text-red-700">
+                              Active alarm {routeActiveFault?.status || ''}: points after {Number(routeActiveFault.faultDistanceKm).toFixed(2)} km are reduced by {Number(routeActiveFault.attenuationDb).toFixed(2)} dB.
+                            </p>
+                          ) : (
+                            <p className="mt-3 text-xs text-emerald-700">
+                              No active route fault. Displaying pure trace.dat reference profile.
+                            </p>
+                          )}
+                        </div>
+
                         <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-4">
                           <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                             <h5 className="text-sm font-bold text-indigo-900">Power (dB)</h5>
@@ -791,45 +1084,62 @@ function Dashboard({ activeView, setActiveView }) {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-              <div className="card bg-gradient-to-br from-amber-50 to-orange-100">
-                <p className="text-xs font-semibold text-slate-600">Temperature</p>
-                <p className="mt-2 text-2xl font-bold text-orange-700">
-                  {selectedRtuHealthLoading
-                    ? 'Loading...'
-                    : selectedRtuHealth?.temperatureC != null
-                      ? `${Number(selectedRtuHealth.temperatureC).toFixed(1)}°C`
-                      : 'N/A'}
-                </p>
-              </div>
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+              <RtuHealthGaugeCard
+                title="Temperature"
+                value={selectedRtuHealth?.temperatureC}
+                unit="°C"
+                maxValue={80}
+                precision={1}
+                loading={selectedRtuHealthLoading}
+                palette="amber"
+              />
+              <RtuHealthGaugeCard
+                title="CPU Usage"
+                value={selectedRtuHealth?.cpuUsagePercent}
+                unit="%"
+                maxValue={100}
+                precision={1}
+                loading={selectedRtuHealthLoading}
+                palette="cyan"
+              />
+              <RtuHealthGaugeCard
+                title="Memory Usage"
+                value={selectedRtuHealth?.memoryUsagePercent}
+                unit="%"
+                maxValue={100}
+                precision={1}
+                loading={selectedRtuHealthLoading}
+                palette="violet"
+              />
+            </div>
 
-              <div className="card bg-gradient-to-br from-cyan-50 to-sky-100">
-                <p className="text-xs font-semibold text-slate-600">CPU Usage</p>
-                <p className="mt-2 text-2xl font-bold text-sky-700">
-                  {selectedRtuHealthLoading
-                    ? 'Loading...'
-                    : selectedRtuHealth?.cpuUsagePercent != null
-                      ? `${Number(selectedRtuHealth.cpuUsagePercent).toFixed(1)}%`
-                      : 'N/A'}
-                </p>
-              </div>
+            <div
+              className={`rounded-3xl border-2 border-slate-900/90 p-5 shadow-[0_14px_35px_-22px_rgba(15,23,42,0.7)] bg-gradient-to-br ${
+                powerSupplyIsNormal
+                  ? 'from-emerald-50 via-white to-emerald-100'
+                  : 'from-rose-50 via-white to-rose-100'
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Power Supply</p>
+                  <p className={`mt-1 text-3xl font-bold ${powerSupplyIsNormal ? 'text-emerald-700' : 'text-rose-700'}`}>
+                    {selectedRtuHealthLoading ? 'Loading...' : (powerSupplyState || 'N/A')}
+                  </p>
+                  <p className="mt-2 text-sm text-slate-600">
+                    RTU {selectedRtuId || '-'}
+                  </p>
+                </div>
 
-              <div className="card bg-gradient-to-br from-violet-50 to-purple-100">
-                <p className="text-xs font-semibold text-slate-600">Memory Usage</p>
-                <p className="mt-2 text-2xl font-bold text-purple-700">
-                  {selectedRtuHealthLoading
-                    ? 'Loading...'
-                    : selectedRtuHealth?.memoryUsagePercent != null
-                      ? `${Number(selectedRtuHealth.memoryUsagePercent).toFixed(1)}%`
-                      : 'N/A'}
-                </p>
-              </div>
-
-              <div className="card bg-gradient-to-br from-emerald-50 to-green-100">
-                <p className="text-xs font-semibold text-slate-600">Power Supply</p>
-                <p className="mt-2 text-2xl font-bold text-emerald-700">
-                  {selectedRtuHealthLoading ? 'Loading...' : (selectedRtuHealth?.powerSupplyStatus || 'N/A')}
-                </p>
+                <div className="rounded-2xl border border-white/70 bg-white/70 px-4 py-3 shadow-inner">
+                  <div className="flex items-center gap-2">
+                    <span className={`h-3 w-3 rounded-full ${powerSupplyIsNormal ? 'bg-emerald-500' : 'bg-rose-500'} animate-pulse`} />
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">Live status</span>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-500">Last sample: {latestRtuHealthMeasuredAtText}</p>
+                  <p className="mt-1 text-xs text-slate-500">Source route: {selectedRtuHealth?.routeId || '-'}</p>
+                </div>
               </div>
             </div>
 
@@ -1070,6 +1380,104 @@ function AlarmSeverityBar({ label, count, color, bgColor }) {
       <span className={`${bgColor} ${color} px-4 py-2 rounded-full text-lg font-bold shadow-md`}>
         {count || 0}
       </span>
+    </div>
+  );
+}
+
+function RtuHealthGaugeCard({
+  title,
+  value,
+  unit,
+  maxValue,
+  precision = 1,
+  loading,
+  palette = 'amber',
+}) {
+  const themes = {
+    amber: {
+      cardBg: 'from-amber-50 via-orange-50 to-amber-100',
+      valueText: 'text-orange-700',
+      gaugeTrack: '#fcd9b1',
+      gaugeFill: '#f97316',
+      needle: '#c2410c',
+      badgeText: 'text-orange-700',
+    },
+    cyan: {
+      cardBg: 'from-cyan-50 via-sky-50 to-cyan-100',
+      valueText: 'text-sky-700',
+      gaugeTrack: '#c7e9ff',
+      gaugeFill: '#0ea5e9',
+      needle: '#0369a1',
+      badgeText: 'text-sky-700',
+    },
+    violet: {
+      cardBg: 'from-violet-50 via-purple-50 to-violet-100',
+      valueText: 'text-purple-700',
+      gaugeTrack: '#e6d5ff',
+      gaugeFill: '#a855f7',
+      needle: '#7e22ce',
+      badgeText: 'text-purple-700',
+    },
+  };
+
+  const theme = themes[palette] || themes.amber;
+  const numericValue = Number(value);
+  const hasValue = Number.isFinite(numericValue);
+  const progressPercent = hasValue
+    ? Math.max(0, Math.min(100, (numericValue / Math.max(1, maxValue)) * 100))
+    : 0;
+
+  const circumference = Math.PI * 45;
+  const dashOffset = circumference * (1 - (progressPercent / 100));
+  const angle = Math.PI - ((Math.PI * progressPercent) / 100);
+  const needleX = 60 + (35 * Math.cos(angle));
+  const needleY = 60 - (35 * Math.sin(angle));
+
+  const formattedValue = loading
+    ? 'Loading...'
+    : hasValue
+      ? `${numericValue.toFixed(precision)}${unit}`
+      : 'N/A';
+
+  return (
+    <div className={`relative overflow-hidden rounded-3xl border-2 border-slate-900/90 bg-gradient-to-br ${theme.cardBg} p-5 shadow-[0_14px_35px_-22px_rgba(15,23,42,0.7)]`}>
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <p className="text-sm font-semibold text-slate-600">{title}</p>
+        <span className={`rounded-full border border-white/70 bg-white/70 px-2.5 py-1 text-xs font-bold ${theme.badgeText}`}>
+          {loading ? '...' : `${progressPercent.toFixed(0)}%`}
+        </span>
+      </div>
+
+      <p className={`text-4xl font-bold tracking-tight ${theme.valueText}`}>{formattedValue}</p>
+
+      <div className="mt-3 h-24 rounded-2xl border border-white/70 bg-white/65 p-2 shadow-inner">
+        <svg viewBox="0 0 120 70" className="h-full w-full">
+          <path
+            d="M 15 60 A 45 45 0 0 1 105 60"
+            fill="none"
+            stroke={theme.gaugeTrack}
+            strokeWidth="10"
+            strokeLinecap="round"
+          />
+          <path
+            d="M 15 60 A 45 45 0 0 1 105 60"
+            fill="none"
+            stroke={theme.gaugeFill}
+            strokeWidth="10"
+            strokeLinecap="round"
+            strokeDasharray={`${circumference} ${circumference}`}
+            strokeDashoffset={dashOffset}
+          />
+
+          {hasValue && !loading && (
+            <>
+              <line x1="60" y1="60" x2={needleX} y2={needleY} stroke={theme.needle} strokeWidth="3" strokeLinecap="round" />
+              <circle cx="60" cy="60" r="4.5" fill={theme.needle} />
+            </>
+          )}
+        </svg>
+      </div>
+
     </div>
   );
 }

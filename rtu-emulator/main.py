@@ -26,6 +26,10 @@ db_service = None
 
 class FaultInjectionRequest(BaseModel):
     faultType: str = "break"
+    repairDurationSeconds: int | None = None
+    attenuationDb: float | None = None
+    generateAlarm: bool = True
+    sendTestReport: bool = True
 
 
 class OtdrConfigUpdateRequest(BaseModel):
@@ -338,6 +342,35 @@ async def get_rtu_route(rtu_id: str, route_id: str):
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@app.get("/api/rtu/{rtu_id}/routes/{route_id}/trace-reference")
+async def get_route_trace_reference(rtu_id: str, route_id: str, maxPoints: int = 1200):
+    """Get sampled reference trace points (distance-power) from route trace.dat file."""
+    if rtu_id not in monitor_services:
+        raise HTTPException(status_code=404, detail=f"RTU {rtu_id} not found")
+
+    monitor_service = monitor_services[rtu_id]
+
+    if route_id not in monitor_service.routes:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Route {route_id} not found in RTU {rtu_id}. Available routes: {list(monitor_service.routes.keys())}"
+        )
+
+    safe_max_points = max(100, min(maxPoints, 5000))
+
+    try:
+        profile = monitor_service.get_route_reference_profile(route_id, max_points=safe_max_points)
+        return {
+            "rtu_id": rtu_id,
+            **profile,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to read trace reference for {route_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to read route trace reference")
+
+
 @app.post("/api/rtu/{rtu_id}/routes/{route_id}/fault")
 async def inject_route_fault(rtu_id: str, route_id: str, request: FaultInjectionRequest):
     """Inject a manual fault on a route and raise an alarm immediately."""
@@ -353,13 +386,23 @@ async def inject_route_fault(rtu_id: str, route_id: str, request: FaultInjection
         )
 
     try:
-        result = await monitor_service.trigger_manual_fault(route_id, request.faultType)
+        result = await monitor_service.trigger_manual_fault(
+            route_id,
+            request.faultType,
+            request.repairDurationSeconds,
+            request.attenuationDb,
+            request.generateAlarm,
+            request.sendTestReport,
+        )
         return {
             "message": f"Manual fault injected for route {route_id}",
             "rtu_id": rtu_id,
             "route_id": route_id,
             "fault_type": result["fault_type"],
             "status": result["status"],
+            "duration_seconds": result.get("duration_seconds"),
+            "expires_at": result.get("expires_at"),
+            "attenuation_db": result.get("attenuation_db"),
             "timestamp": datetime.now().isoformat(),
         }
     except ValueError as e:

@@ -1,8 +1,9 @@
 import asyncio
 import random
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Dict
+from typing import Dict, Optional
 from models import RouteInfo, TraceStatus, OTDRTestReport
 from otdr_simulator import OTDRSimulator
 from alarm_service import AlarmService
@@ -12,6 +13,13 @@ from kpi_service import KpiService
 from config import settings
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ManualFaultState:
+    fault_type: str
+    locked_failure_power_db: Optional[float] = None
+    attenuation_db: Optional[float] = None
 
 
 class MonitorService:
@@ -36,7 +44,9 @@ class MonitorService:
         self.test_period_seconds = max(30, int(settings.otdr_test_period_seconds))
         self.next_auto_test_at = None
         self.next_kpi_at = None
-        self.manual_faults: Dict[str, str] = {}
+        self.manual_faults: Dict[str, ManualFaultState] = {}
+        self.last_normal_power_db: Dict[str, float] = {}
+        self.route_wavelength_nm: Dict[str, int] = {}
         
         # Initialize routes
         self._initialize_routes()
@@ -55,6 +65,18 @@ class MonitorService:
                 return float(fiber_length)
 
             return 25.0
+
+        def extract_wavelength_nm(route_data: dict) -> int:
+            direct_wavelength = route_data.get("wavelengthNm")
+            if isinstance(direct_wavelength, (int, float)):
+                return int(direct_wavelength)
+
+            current_condition = route_data.get("currentCondition") or route_data.get("current_condition") or {}
+            condition_wavelength = current_condition.get("wavelengthNm") or current_condition.get("wavelength_nm")
+            if isinstance(condition_wavelength, (int, float)):
+                return int(condition_wavelength)
+
+            return 1550
 
         if settings.use_database_rtu:
             # Fetch routes from MongoDB for this RTU
@@ -79,6 +101,7 @@ class MonitorService:
                     continue
 
                 distance_km = extract_distance_km(route_data)
+                wavelength_nm = extract_wavelength_nm(route_data)
                 
                 self.routes[route_id] = RouteInfo(
                     route_id=route_id,
@@ -88,6 +111,7 @@ class MonitorService:
                     current_status=TraceStatus.UNKNOWN,
                     active_alarms=0
                 )
+                self.route_wavelength_nm[route_id] = wavelength_nm
                 logger.info(f"Added route {route_id} ({distance_km} km) for RTU {self.rtu_id}")
         else:
             # Use legacy configuration-based routes
@@ -104,6 +128,7 @@ class MonitorService:
                         current_status=TraceStatus.UNKNOWN,
                         active_alarms=0
                     )
+                    self.route_wavelength_nm[route_id] = 1550
         
         logger.info(f"Initialized {len(self.routes)} routes for monitoring on RTU {self.rtu_id}")
     
@@ -182,6 +207,7 @@ class MonitorService:
         test_mode: str = "Auto",
         forced_fault: str | None = None,
         generate_alarm: bool = True,
+        send_test_report: bool = True,
     ) -> OTDRTestReport:
         """
         Test a specific route and generate alarms if needed.
@@ -193,6 +219,8 @@ class MonitorService:
             raise ValueError(f"Unknown route: {route_id}")
         
         logger.info(f"Testing route {route_id}")
+
+        manual_fault_state = await self._get_active_manual_fault_state(route_id)
         
         # Fault source precedence:
         # 1) explicit forced fault for this call
@@ -200,14 +228,29 @@ class MonitorService:
         # 3) automatic random generation (if enabled)
         if forced_fault is not None:
             fault_scenario = self._normalize_fault_type(forced_fault)
-        elif route_id in self.manual_faults:
-            fault_scenario = self.manual_faults[route_id]
+        elif manual_fault_state:
+            fault_scenario = manual_fault_state.fault_type
         elif settings.auto_fault_generation:
             fault_scenario = self._select_fault_scenario()
         else:
             fault_scenario = "normal"
 
         inject_fault = fault_scenario != "normal"
+        fixed_fault_power_db = None
+        fault_power_penalty_db = None
+        if inject_fault and manual_fault_state and fault_scenario == "break":
+            if manual_fault_state.locked_failure_power_db is not None:
+                fixed_fault_power_db = manual_fault_state.locked_failure_power_db
+            elif manual_fault_state.attenuation_db is not None:
+                baseline_power = self.last_normal_power_db.get(route_id)
+                if baseline_power is not None:
+                    fixed_fault_power_db = round(
+                        max(0.0, baseline_power - manual_fault_state.attenuation_db),
+                        3,
+                    )
+
+        if inject_fault and manual_fault_state and manual_fault_state.attenuation_db is not None:
+            fault_power_penalty_db = manual_fault_state.attenuation_db
         
         # Generate OTDR trace
         route_info = self.routes[route_id]
@@ -215,13 +258,28 @@ class MonitorService:
             route_id=route_id,
             inject_fault=inject_fault,
             fault_type=fault_scenario,
-            distance_km=route_info.fiber_length_km
+            distance_km=route_info.fiber_length_km,
+            fixed_fault_power_db=fixed_fault_power_db,
+            fault_power_penalty_db=fault_power_penalty_db,
         )
+
+        if (
+            inject_fault
+            and manual_fault_state
+            and fault_scenario == "break"
+            and manual_fault_state.locked_failure_power_db is None
+            and trace.status == TraceStatus.BREAK
+            and trace.average_power_db is not None
+        ):
+            # Persist the first failed-power value so subsequent tests reuse it.
+            manual_fault_state.locked_failure_power_db = trace.average_power_db
         
         # Update route info
         route_info = self.routes[route_id]
         route_info.last_test_time = datetime.now()
         route_info.current_status = trace.status
+        if trace.status == TraceStatus.NORMAL and trace.average_power_db is not None:
+            self.last_normal_power_db[route_id] = trace.average_power_db
         
         logger.info(
             f"Route {route_id} test complete: "
@@ -236,13 +294,17 @@ class MonitorService:
         if trace.events:
             fault_distance_km = max(trace.events, key=lambda e: e.loss_db).distance_km
 
+        report_power_variation_db = trace.power_variation_db
+        if inject_fault and manual_fault_state and manual_fault_state.attenuation_db is not None:
+            report_power_variation_db = round(manual_fault_state.attenuation_db, 3)
+
         test_report = OTDRTestReport(
             route_id=route_id,
             rtu_id=self.rtu_id,
             test_mode=test_mode,
             pulse_width_ns=random.choice([100, 300, 1000, 3000]),
             dynamic_range_db=round(random.uniform(28.0, 40.0), 2),
-            wavelength_nm=random.choice([1310, 1550, 1625]),
+            wavelength_nm=self.route_wavelength_nm.get(route_id, 1550),
             test_result="Pass" if trace.status == TraceStatus.NORMAL else "Fail",
             total_loss_db=trace.total_loss_db,
             event_count=len(trace.events),
@@ -252,11 +314,12 @@ class MonitorService:
             event_reference_file=trace.event_reference_file,
             measurement_reference_file=trace.measurement_reference_file,
             average_power_db=trace.average_power_db,
-            power_variation_db=trace.power_variation_db,
+            power_variation_db=report_power_variation_db,
             rtu_health=trace.rtu_health,
         )
 
-        await self.ems_client.send_test_report(test_report)
+        if send_test_report:
+            await self.ems_client.send_test_report(test_report)
         
         if generate_alarm:
             # Analyze trace and generate alarm if needed
@@ -287,25 +350,49 @@ class MonitorService:
 
         return test_report
 
-    async def trigger_manual_fault(self, route_id: str, fault_type: str = "break") -> dict:
+    async def trigger_manual_fault(
+        self,
+        route_id: str,
+        fault_type: str = "break",
+        duration_seconds: Optional[int] = None,
+        attenuation_db: Optional[float] = None,
+        generate_alarm: bool = True,
+        send_test_report: bool = True,
+    ) -> dict:
         """Inject a persistent fault on a route and raise one alarm immediately."""
         if route_id not in self.routes:
             raise ValueError(f"Unknown route: {route_id}")
 
+        normalized_attenuation = None
+        if attenuation_db is not None:
+            if attenuation_db <= 0:
+                raise ValueError("attenuationDb must be greater than 0")
+            normalized_attenuation = float(attenuation_db)
+
         normalized_fault = self._normalize_fault_type(fault_type)
-        self.manual_faults[route_id] = normalized_fault
+        normalized_duration = max(1, int(duration_seconds)) if duration_seconds is not None else None
+
+        self.manual_faults[route_id] = ManualFaultState(
+            fault_type=normalized_fault,
+            locked_failure_power_db=None,
+            attenuation_db=normalized_attenuation,
+        )
 
         await self.test_route(
             route_id,
             test_mode="ManualFaultInjection",
             forced_fault=normalized_fault,
-            generate_alarm=True,
+            generate_alarm=generate_alarm,
+            send_test_report=send_test_report,
         )
 
         return {
             "route_id": route_id,
             "fault_type": normalized_fault,
             "status": self.routes[route_id].current_status.value,
+            "duration_seconds": normalized_duration,
+            "expires_at": None,
+            "attenuation_db": normalized_attenuation,
         }
 
     async def resolve_manual_fault(self, route_id: str) -> dict:
@@ -336,6 +423,29 @@ class MonitorService:
             "resolved_alarms": resolved_count,
             "status": self.routes[route_id].current_status.value,
         }
+
+    async def _get_active_manual_fault_state(self, route_id: str) -> Optional[ManualFaultState]:
+        state = self.manual_faults.get(route_id)
+        if state is None:
+            return None
+
+        try:
+            active_route_alarms = await self.ems_client.get_active_alarms_by_route(route_id)
+        except Exception as e:
+            # Keep existing fault active when EMS is temporarily unreachable.
+            logger.warning("Failed to verify active alarms for route %s: %s", route_id, e)
+            return state
+
+        if not active_route_alarms:
+            self.manual_faults.pop(route_id, None)
+
+            if route_id in self.routes:
+                self.routes[route_id].current_status = TraceStatus.NORMAL
+                self.routes[route_id].active_alarms = 0
+
+            return None
+
+        return state
 
     def _normalize_fault_type(self, fault_type: str) -> str:
         value = (fault_type or "break").strip().lower()
@@ -432,6 +542,13 @@ class MonitorService:
         if route_id not in self.routes:
             raise ValueError(f"Unknown route: {route_id}")
         return self.routes[route_id]
+
+    def get_route_reference_profile(self, route_id: str, max_points: int = 1200) -> dict:
+        """Return reference trace profile (distance-power points) for a route."""
+        if route_id not in self.routes:
+            raise ValueError(f"Unknown route: {route_id}")
+
+        return self.otdr.get_reference_trace_profile(route_id, max_points=max_points)
     
     async def _generate_and_send_kpis(self):
         """Generate and send KPIs to EMS."""

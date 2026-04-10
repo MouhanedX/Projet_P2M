@@ -242,7 +242,10 @@ class EMSClient:
                     return []
 
                 alarms = response.json() or []
-                return [a for a in alarms if a.get("status") == "ACTIVE"]
+                return [
+                    a for a in alarms
+                    if str(a.get("status", "")).upper() in {"ACTIVE", "ACKNOWLEDGED"}
+                ]
         except Exception as e:
             logger.error("Error fetching active alarms for route %s: %s", route_id, str(e))
             return []
