@@ -549,6 +549,13 @@ class MonitorService:
             raise ValueError(f"Unknown route: {route_id}")
 
         return self.otdr.get_reference_trace_profile(route_id, max_points=max_points)
+
+    def get_route_reference_pdf_file(self, route_id: str):
+        """Return reference PDF file path for a route when available."""
+        if route_id not in self.routes:
+            raise ValueError(f"Unknown route: {route_id}")
+
+        return self.otdr.get_reference_pdf_file(route_id)
     
     async def _generate_and_send_kpis(self):
         """Generate and send KPIs to EMS."""

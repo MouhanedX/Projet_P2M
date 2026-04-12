@@ -40,6 +40,10 @@ export const rtusAPI = {
   launchManualTest: (rtuId, routeId) => rtuApi.post(`/rtu/${rtuId}/test/${routeId}`),
   injectRouteFault: (rtuId, routeId, payload) => rtuApi.post(`/rtu/${rtuId}/routes/${routeId}/fault`, payload),
   getRouteTraceReference: (rtuId, routeId, maxPoints = 1600) => rtuApi.get(`/rtu/${rtuId}/routes/${routeId}/trace-reference`, { params: { maxPoints } }),
+  downloadRouteReferencePdf: (rtuId, routeId) => rtuApi.get(
+    `/rtu/${encodeURIComponent(rtuId)}/routes/${encodeURIComponent(routeId)}/reference-pdf`,
+    { responseType: 'blob' }
+  ),
   getOtdrConfig: (rtuId) => rtuApi.get(`/rtu/${rtuId}/otdr-config`),
   updateOtdrConfig: (rtuId, payload) => rtuApi.put(`/rtu/${rtuId}/otdr-config`, payload)
 };

@@ -106,7 +106,7 @@ function App() {
     }
 
     return (
-      <div className="min-h-screen bg-white">
+      <div className="h-svh overflow-y-auto overflow-x-hidden overscroll-y-none bg-white">
         <Header wsConnected={wsConnected} username={username} onLogout={handleLogout} activeView={activeView} setActiveView={setActiveView} />
         <main className="w-full px-3 sm:px-5 lg:px-8 py-5">
           {content}

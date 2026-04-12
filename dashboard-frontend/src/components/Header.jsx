@@ -1,7 +1,7 @@
-import { LogOut, UserCircle2, Radar, Activity, Router, SlidersHorizontal, Wrench } from 'lucide-react';
+import { LogOut, LayoutDashboard, Activity, Router, SlidersHorizontal, Wrench } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
-function Header({ wsConnected, username, onLogout, activeView, setActiveView }) {
+function Header({ wsConnected, onLogout, activeView, setActiveView }) {
   const navigate = useNavigate();
   const location = useLocation();
   const isConfigPath = location.pathname === '/config';
@@ -41,7 +41,7 @@ function Header({ wsConnected, username, onLogout, activeView, setActiveView }) 
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center py-4 min-h-20">
           <div className="flex items-center space-x-2">
-            <img src="/FiberMaster_Logo.png" alt="FiberMaster" className="w-16 h-16 object-contain" />
+            <img src="/favicon_FiberMaster.png" alt="FiberMaster" className="w-14 h-14 object-contain" />
             <div>
               <h1 className="text-xl font-bold text-gray-900">
                 FiberMaster
@@ -56,19 +56,19 @@ function Header({ wsConnected, username, onLogout, activeView, setActiveView }) 
             <div className="rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm">
               <div className="flex items-center justify-center gap-1">
                 {[
-                  { id: 'noc', label: 'NOC Real-time', icon: Radar },
+                  { id: 'noc', label: 'Dashboard', icon: LayoutDashboard },
                   { id: 'rtus', label: 'RTUs', icon: Activity },
                   { id: 'network', label: 'Optical Network', icon: Router },
-                  { id: 'test', label: 'Test', icon: Wrench },
-                  { id: 'config', label: 'Config', icon: SlidersHorizontal }
+                  { id: 'test', label: 'Alarm Test', icon: Wrench },
+                  { id: 'config', label: 'Test Configuration', icon: SlidersHorizontal }
                 ].map(({ id, label, icon: Icon }) => (
                   <button
                     key={id}
                     onClick={() => handleSectionClick(id)}
                     className={`px-3 py-1.5 rounded-md font-medium transition-all flex items-center justify-center space-x-1.5 text-sm ${
                       isSectionActive(id)
-                        ? 'bg-blue-500 text-white shadow-sm'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:text-slate-900'
                     }`}
                   >
                     <Icon className="w-4 h-4" />
@@ -80,11 +80,6 @@ function Header({ wsConnected, username, onLogout, activeView, setActiveView }) 
           </div>
 
           <div className="flex items-center space-x-3">
-            <div className="hidden sm:flex items-center space-x-2 rounded-lg bg-slate-100 px-3 py-1.5">
-              <UserCircle2 className="w-4 h-4 text-slate-600" />
-              <span className="text-sm text-slate-700 font-medium">{username || 'operator'}</span>
-            </div>
-
             <div className="flex items-center space-x-1.5 text-sm text-gray-600">
               <span className="font-medium">
                 {new Date().toLocaleString('en-US', {

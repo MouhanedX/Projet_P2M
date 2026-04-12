@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -369,6 +370,39 @@ async def get_route_trace_reference(rtu_id: str, route_id: str, maxPoints: int =
     except Exception as e:
         logger.error(f"Failed to read trace reference for {route_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to read route trace reference")
+
+
+@app.get("/api/rtu/{rtu_id}/routes/{route_id}/reference-pdf")
+async def download_route_reference_pdf(rtu_id: str, route_id: str):
+    """Download the reference PDF for a route when available."""
+    if rtu_id not in monitor_services:
+        raise HTTPException(status_code=404, detail=f"RTU {rtu_id} not found")
+
+    monitor_service = monitor_services[rtu_id]
+
+    if route_id not in monitor_service.routes:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Route {route_id} not found in RTU {rtu_id}. Available routes: {list(monitor_service.routes.keys())}"
+        )
+
+    try:
+        pdf_file = monitor_service.get_route_reference_pdf_file(route_id)
+        if pdf_file is None:
+            raise HTTPException(status_code=404, detail=f"Reference PDF not found for route {route_id}")
+
+        return FileResponse(
+            path=str(pdf_file),
+            media_type="application/pdf",
+            filename=pdf_file.name,
+        )
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to serve reference PDF for {route_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to download route reference PDF")
 
 
 @app.post("/api/rtu/{rtu_id}/routes/{route_id}/fault")

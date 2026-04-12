@@ -191,6 +191,13 @@ class OTDRSimulator:
             entry = index.setdefault(route_id, {})
             entry["trace"] = dat_path
 
+        for pdf_path in self.reference_root.rglob("*.pdf"):
+            route_id = self._extract_route_id_from_filename(pdf_path.name)
+            if not route_id:
+                continue
+            entry = index.setdefault(route_id, {})
+            entry["pdf"] = pdf_path
+
         return index
 
     def _get_route_reference(self, route_id: str) -> Optional[RouteReferenceBundle]:
@@ -270,6 +277,18 @@ class OTDRSimulator:
             "distance_range_km": distance_range_km,
             "points": points_payload,
         }
+
+    def get_reference_pdf_file(self, route_id: str) -> Optional[Path]:
+        normalized_route_id = self._normalize_route_id(route_id)
+        file_entry = self.reference_index.get(normalized_route_id)
+        if not file_entry:
+            return None
+
+        pdf_file = file_entry.get("pdf")
+        if not pdf_file or not pdf_file.exists() or not pdf_file.is_file():
+            return None
+
+        return pdf_file
 
     @staticmethod
     def _sample_trace_points(trace_points: List[Tuple[float, float]], max_points: int) -> List[Tuple[float, float]]:
@@ -492,10 +511,14 @@ class OTDRSimulator:
 
     @staticmethod
     def _extract_route_id_from_filename(file_name: str) -> str:
-        if file_name.endswith("-dump.json"):
+        lower_name = file_name.lower()
+
+        if lower_name.endswith("-dump.json"):
             route_id = file_name[: -len("-dump.json")]
-        elif file_name.endswith("-trace.dat"):
+        elif lower_name.endswith("-trace.dat"):
             route_id = file_name[: -len("-trace.dat")]
+        elif lower_name.endswith(".pdf"):
+            route_id = file_name[: -len(".pdf")]
         else:
             route_id = file_name
 

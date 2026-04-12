@@ -107,7 +107,7 @@ function AlarmList({ alarms, onRefresh }) {
               Created Date & Time
             </th>
             <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Acknowledge
+              Assign
             </th>
           </tr>
         </thead>
@@ -142,7 +142,7 @@ function AlarmList({ alarms, onRefresh }) {
                 <td className="px-6 py-4 text-center text-sm text-gray-500">
                   {acknowledged ? (
                     <span className="inline-flex rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700">
-                      Acknowledged
+                      Assigned
                     </span>
                   ) : canAcknowledge ? (
                     <button
@@ -150,7 +150,7 @@ function AlarmList({ alarms, onRefresh }) {
                       disabled={processing === alarmIdentifier}
                       className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      {processing === alarmIdentifier ? 'Acknowledging...' : 'Acknowledge'}
+                      {processing === alarmIdentifier ? 'Assigning...' : 'Assign'}
                     </button>
                   ) : (
                     <span className="text-slate-400">-</span>

@@ -207,10 +207,6 @@ function AvailabilityRangeChart({ history = [] }) {
               </BarChart>
             </ResponsiveContainer>
           </div>
-
-          <p className="mt-3 text-xs text-slate-500">
-            Built from {totalSamples} KPI snapshots. Blue dashed line marks the 99% target.
-          </p>
         </>
       )}
     </div>

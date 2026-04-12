@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Activity, AlertTriangle, Clock3, Play, RefreshCw, SlidersHorizontal, UserCheck, Wrench } from 'lucide-react';
+import { Activity, AlertCircle, Clock3, Play, SlidersHorizontal, UserCheck, Wrench } from 'lucide-react';
 import { alarmsAPI, routesAPI, rtusAPI } from '../services/api';
 
 const FAULT_CAUSES = [
@@ -137,8 +136,18 @@ const formatCountdown = (targetDate) => {
   return `${minutes}m ${seconds.toString().padStart(2, '0')}s`;
 };
 
+const formatLabel = (value) => {
+  if (!value || value === '-') {
+    return '-';
+  }
+
+  return String(value)
+    .replace(/_/g, ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
 function TestControlPage({ configOnly = false }) {
-  const navigate = useNavigate();
   const latestConfigRequestRef = useRef(0);
   const [routes, setRoutes] = useState([]);
   const [activeAlarms, setActiveAlarms] = useState([]);
@@ -156,12 +165,9 @@ function TestControlPage({ configOnly = false }) {
     routeId: '',
     faultType: 'break',
     faultCause: 'FIBER_BREAK',
-    faultLocationDescription: '',
     faultLocationKm: '',
     attenuationDb: '',
     repairDurationSeconds: '300',
-    technicianName: 'field-team',
-    description: ''
   }));
   const [otdrConfig, setOtdrConfig] = useState({
     mode: 'manual',
@@ -506,12 +512,12 @@ function TestControlPage({ configOnly = false }) {
         routeId: form.routeId,
         faultType: form.faultType,
         faultCause: form.faultCause,
-        faultLocationDescription: form.faultLocationDescription,
+        faultLocationDescription: '',
         faultLocationKm,
         attenuationDb,
-        description: form.description,
+        description: '',
         assignToTechnician: true,
-        technicianName: form.technicianName,
+        technicianName: 'field-team',
         repairDurationSeconds
       });
 
@@ -553,42 +559,28 @@ function TestControlPage({ configOnly = false }) {
     }
   };
 
-  const activeRouteSet = new Set(
-    activeAlarms
-      .map((alarm) => alarm.routeId || alarm.route_id)
-      .filter((routeId) => typeof routeId === 'string' && routeId.length > 0)
-  );
-
   const nextAutoTestDate = parseTimestamp(otdrConfig.nextAutoTestAt);
 
   return (
     <div className="space-y-6">
-      {!configOnly && (
-        <div className="card bg-gradient-to-r from-slate-900 via-blue-900 to-cyan-900 text-white">
+      {configOnly ? (
+        <div className="card bg-gradient-to-r from-slate-900 via-blue-900 to-cyan-900 text-white shadow-2xl">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <h2 className="text-2xl font-bold flex items-center gap-2">
+              <SlidersHorizontal className="w-6 h-6" />
+              Test Configuration
+            </h2>
+            <p className="text-sm text-slate-100">Configure OTDR mode, schedule, and manual route tests.</p>
+          </div>
+        </div>
+      ) : (
+        <div className="card bg-gradient-to-r from-slate-900 via-blue-900 to-cyan-900 text-white shadow-2xl">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <h2 className="text-2xl font-bold flex items-center gap-2">
                 <Wrench className="w-6 h-6" />
                 Manual Maintenance Test Interface
               </h2>
-              <p className="mt-2 text-sm text-blue-100">
-                No automatic alarm flow: manual creation, technician assignment, exact timed resolution.
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => navigate('/')}
-                className="px-4 py-2 rounded-lg bg-white/15 hover:bg-white/25 transition-colors"
-              >
-                Back to Dashboard
-              </button>
-              <button
-                onClick={loadData}
-                className="px-4 py-2 rounded-lg bg-white text-slate-900 font-semibold hover:bg-slate-100 transition-colors flex items-center gap-2"
-              >
-                <RefreshCw className="w-4 h-4" />
-                Refresh
-              </button>
             </div>
           </div>
         </div>
@@ -611,11 +603,13 @@ function TestControlPage({ configOnly = false }) {
       ) : (
         <>
           {configOnly && (
-            <div className="card space-y-4 border border-blue-200 bg-blue-50/40">
-              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                <SlidersHorizontal className="w-5 h-5 text-blue-700" />
-                Config OTDR
-              </h3>
+            <div className="card space-y-5 shadow-lg">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
+                <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+                  <SlidersHorizontal className="w-5 h-5 text-blue-700" />
+                  OTDR Parameters
+                </h3>
+              </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <label className="text-sm font-medium text-slate-700 space-y-1">
@@ -623,13 +617,12 @@ function TestControlPage({ configOnly = false }) {
                   <select
                     value={form.rtuId}
                     onChange={(e) => handleRtuChange(e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200"
                   >
                     {groupedRoutes.map(([rtuId]) => (
                       <option key={rtuId} value={rtuId}>{rtuId}</option>
                     ))}
                   </select>
-                  <p className="text-xs text-slate-500">Configuration is per RTU. Last selected RTU is remembered.</p>
                 </label>
 
                 <label className="text-sm font-medium text-slate-700 space-y-1">
@@ -637,7 +630,7 @@ function TestControlPage({ configOnly = false }) {
                   <select
                     value={otdrConfig.mode}
                     onChange={(e) => handleConfigChange('mode', e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200"
                   >
                     <option value="manual">Manual</option>
                     <option value="auto">Auto</option>
@@ -652,7 +645,7 @@ function TestControlPage({ configOnly = false }) {
                     step="1"
                     value={otdrConfig.periodSeconds}
                     onChange={(e) => handleConfigChange('periodSeconds', e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200"
                   />
                 </label>
 
@@ -661,7 +654,7 @@ function TestControlPage({ configOnly = false }) {
                   <select
                     value={otdrConfig.routeId || form.routeId}
                     onChange={(e) => handleConfigChange('routeId', e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200"
                   >
                     {selectedRtuRoutes.map((route) => (
                       <option key={route.routeId} value={route.routeId}>{route.routeId}</option>
@@ -674,7 +667,7 @@ function TestControlPage({ configOnly = false }) {
                 <button
                   onClick={handleSaveOtdrConfig}
                   disabled={configSaving}
-                  className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-white font-semibold hover:bg-blue-800 disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-xl bg-blue-700 px-4 py-2 text-white font-semibold shadow-sm hover:bg-blue-800 disabled:opacity-50"
                 >
                   <SlidersHorizontal className="w-4 h-4" />
                   {configSaving ? 'Saving...' : 'Save Config'}
@@ -683,13 +676,15 @@ function TestControlPage({ configOnly = false }) {
                 <button
                   onClick={handleLaunchManualTest}
                   disabled={manualTesting}
-                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-white font-semibold hover:bg-emerald-700 disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-white font-semibold shadow-sm hover:bg-emerald-700 disabled:opacity-50"
                 >
                   <Play className="w-4 h-4" />
                   {manualTesting ? 'Test running...' : 'Launch Manual Test'}
                 </button>
+              </div>
 
-                <span className="text-xs text-slate-600">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                <span className="text-xs font-medium text-slate-600">
                   Next auto test: {nextAutoTestDate ? nextAutoTestDate.toLocaleString() : '-'}
                 </span>
               </div>
@@ -712,16 +707,21 @@ function TestControlPage({ configOnly = false }) {
 
           {!configOnly && (
             <>
-              <div className="card space-y-4">
-                <h3 className="text-lg font-bold text-slate-800">Manual alarm creation (OTDR)</h3>
+              <div className="card space-y-5 shadow-lg">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
+                  <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+                    <Wrench className="w-5 h-5 text-blue-700" />
+                    Manual Alarm Creation
+                  </h3>
+                </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <label className="text-sm font-medium text-slate-700 space-y-1">
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+              <label className="text-sm font-medium text-slate-700 space-y-1 md:col-span-3">
                 <span>RTU</span>
                 <select
                   value={form.rtuId}
                   onChange={(e) => handleRtuChange(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200"
                 >
                   {groupedRoutes.map(([rtuId]) => (
                     <option key={rtuId} value={rtuId}>{rtuId}</option>
@@ -729,12 +729,12 @@ function TestControlPage({ configOnly = false }) {
                 </select>
               </label>
 
-              <label className="text-sm font-medium text-slate-700 space-y-1">
+              <label className="text-sm font-medium text-slate-700 space-y-1 md:col-span-3">
                 <span>Route</span>
                 <select
                   value={form.routeId}
                   onChange={(e) => handleChange('routeId', e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200"
                 >
                   {selectedRtuRoutes.map((route) => (
                     <option key={route.routeId} value={route.routeId}>{route.routeId}</option>
@@ -742,44 +742,33 @@ function TestControlPage({ configOnly = false }) {
                 </select>
               </label>
 
-              <label className="text-sm font-medium text-slate-700 space-y-1">
+              <label className="text-sm font-medium text-slate-700 space-y-1 md:col-span-3">
                 <span>Alarm type</span>
                 <select
                   value={form.faultType}
                   onChange={(e) => handleChange('faultType', e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200"
                 >
-                  <option value="break">FIBER_BREAK</option>
-                  <option value="degradation">DEGRADATION</option>
-                  <option value="high_loss_splice">HIGH_EVENT_LOSS</option>
+                  <option value="break">Fiber Break</option>
+                  <option value="degradation">Degradation</option>
+                  <option value="high_loss_splice">High Event Loss</option>
                 </select>
               </label>
 
-              <label className="text-sm font-medium text-slate-700 space-y-1">
+              <label className="text-sm font-medium text-slate-700 space-y-1 md:col-span-3">
                 <span>Fault cause</span>
                 <select
                   value={form.faultCause}
                   onChange={(e) => handleChange('faultCause', e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200"
                 >
                   {FAULT_CAUSES.map((cause) => (
-                    <option key={cause} value={cause}>{cause}</option>
+                    <option key={cause} value={cause}>{formatLabel(cause)}</option>
                   ))}
                 </select>
               </label>
 
-              <label className="text-sm font-medium text-slate-700 space-y-1">
-                <span>Precise location (text)</span>
-                <input
-                  type="text"
-                  value={form.faultLocationDescription}
-                  onChange={(e) => handleChange('faultLocationDescription', e.target.value)}
-                  placeholder="e.g. chamber C12, north segment"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
-                />
-              </label>
-
-              <label className="text-sm font-medium text-slate-700 space-y-1">
+              <label className="text-sm font-medium text-slate-700 space-y-1 md:col-span-2">
                 <span>Location (km)</span>
                 <input
                   type="number"
@@ -788,11 +777,11 @@ function TestControlPage({ configOnly = false }) {
                   value={form.faultLocationKm}
                   onChange={(e) => handleChange('faultLocationKm', e.target.value)}
                   placeholder="0.00"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200"
                 />
               </label>
 
-              <label className="text-sm font-medium text-slate-700 space-y-1">
+              <label className="text-sm font-medium text-slate-700 space-y-1 md:col-span-2">
                 <span>Attenuation (dB)</span>
                 <input
                   type="number"
@@ -801,11 +790,11 @@ function TestControlPage({ configOnly = false }) {
                   value={form.attenuationDb}
                   onChange={(e) => handleChange('attenuationDb', e.target.value)}
                   placeholder="10.50"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200"
                 />
               </label>
 
-              <label className="text-sm font-medium text-slate-700 space-y-1">
+              <label className="text-sm font-medium text-slate-700 space-y-1 md:col-span-2">
                 <span>Repair duration (seconds)</span>
                 <input
                   type="number"
@@ -813,29 +802,7 @@ function TestControlPage({ configOnly = false }) {
                   step="1"
                   value={form.repairDurationSeconds}
                   onChange={(e) => handleChange('repairDurationSeconds', e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
-                />
-              </label>
-
-              <label className="text-sm font-medium text-slate-700 space-y-1 md:col-span-2">
-                <span>Assigned technician</span>
-                <input
-                  type="text"
-                  value={form.technicianName}
-                  onChange={(e) => handleChange('technicianName', e.target.value)}
-                  placeholder="Technician or team name"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
-                />
-              </label>
-
-              <label className="text-sm font-medium text-slate-700 space-y-1 md:col-span-2">
-                <span>Description (optional)</span>
-                <textarea
-                  value={form.description}
-                  onChange={(e) => handleChange('description', e.target.value)}
-                  rows={3}
-                  placeholder="Fault description"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200"
                 />
               </label>
             </div>
@@ -843,7 +810,7 @@ function TestControlPage({ configOnly = false }) {
                 <button
                   onClick={handleCreateManualAlarm}
                   disabled={submitting}
-                  className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-white font-semibold hover:bg-red-700 disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-white font-semibold shadow-sm hover:bg-red-700 disabled:opacity-50"
                 >
                   <UserCheck className="w-4 h-4" />
                   {submitting
@@ -852,8 +819,14 @@ function TestControlPage({ configOnly = false }) {
                 </button>
               </div>
 
-              <div className="card">
-                <h3 className="text-lg font-bold text-slate-800 mb-4">Active alarms under repair</h3>
+              <div className="card shadow-lg">
+                <div className="mb-4 flex items-center justify-between border-b border-slate-200 pb-3">
+                  <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+                    <AlertCircle className="w-5 h-5 text-amber-600" />
+                    Active Alarms Under Repair
+                  </h3>
+                  <span className="text-xs font-medium text-slate-500">Live list</span>
+                </div>
 
             {activeAlarms.length === 0 ? (
               <p className="text-sm text-slate-600">No active alarm.</p>
@@ -881,7 +854,7 @@ function TestControlPage({ configOnly = false }) {
                         <tr key={alarm.alarmId || alarm.alarm_id || alarm.id} className="border-b border-slate-100">
                           <td className="py-2 pr-4 text-slate-700">{alarm.rtuId || alarm.rtu_id || '-'}</td>
                           <td className="py-2 pr-4 font-semibold text-slate-800">{alarm.routeId || alarm.route_id || '-'}</td>
-                          <td className="py-2 pr-4 text-slate-700">{cause}</td>
+                          <td className="py-2 pr-4 text-slate-700">{formatLabel(cause)}</td>
                           <td className="py-2 pr-4 text-slate-600">{start ? start.toLocaleString() : '-'}</td>
                           <td className="py-2 pr-4 text-slate-600">{end ? end.toLocaleString() : '-'}</td>
                           <td className="py-2">
@@ -896,45 +869,6 @@ function TestControlPage({ configOnly = false }) {
                 </table>
               </div>
             )}
-              </div>
-
-              <div className="card">
-                <h3 className="text-lg font-bold text-slate-800 mb-4">Route status</h3>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-slate-500 border-b border-slate-200">
-                        <th className="pb-2 pr-4">RTU</th>
-                        <th className="pb-2 pr-4">Route</th>
-                        <th className="pb-2 pr-4">Route status</th>
-                        <th className="pb-2">Active alarm</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {routes.map((route) => {
-                        const hasActiveAlarm = activeRouteSet.has(route.routeId);
-                        return (
-                          <tr key={route.routeId} className="border-b border-slate-100">
-                            <td className="py-2 pr-4 text-slate-700">{route.rtuId}</td>
-                            <td className="py-2 pr-4 font-semibold text-slate-800">{route.routeId}</td>
-                            <td className="py-2 pr-4 text-slate-600">{route.status || 'UNKNOWN'}</td>
-                            <td className="py-2">
-                              {hasActiveAlarm ? (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-1 text-xs font-semibold text-red-700">
-                                  <AlertTriangle className="w-3 h-3" /> ACTIVE
-                                </span>
-                              ) : (
-                                <span className="inline-flex rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700">
-                                  NONE
-                                </span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
               </div>
             </>
           )}

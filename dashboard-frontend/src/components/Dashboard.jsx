@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { kpisAPI, alarmsAPI, routesAPI, otdrAPI, rtusAPI } from '../services/api';
 import websocketService from '../services/websocket';
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -7,7 +8,7 @@ import KpiCard from './KpiCard';
 import AlarmList from './AlarmList';
 import NetworkStatusChart from './NetworkStatusChart';
 import AvailabilityRangeChart from './AvailabilityRangeChart';
-import { AlertCircle, Activity, Router, Wifi, WifiOff, ShieldCheck, Radar, ExternalLink, History, X } from 'lucide-react';
+import { AlertCircle, Activity, Router, Wifi, WifiOff, ShieldCheck, Radar, ExternalLink, History, Download, X } from 'lucide-react';
 
 const TOPOLOGY_COLORS = ['#00d4aa', '#0084ff', '#00ff88', '#f97316', '#e11d48', '#a855f7', '#ffb700'];
 
@@ -36,6 +37,28 @@ const parseTimestamp = (value) => {
   }
 
   return null;
+};
+
+const extractFilenameFromHeader = (contentDisposition, fallbackName) => {
+  if (!contentDisposition || typeof contentDisposition !== 'string') {
+    return fallbackName;
+  }
+
+  const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1].trim());
+    } catch {
+      return utf8Match[1].trim();
+    }
+  }
+
+  const simpleMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
+  if (simpleMatch?.[1]) {
+    return simpleMatch[1].trim();
+  }
+
+  return fallbackName;
 };
 
 const extractRtuHealth = (test) => {
@@ -176,7 +199,34 @@ function Dashboard({ activeView, setActiveView }) {
   const [routeDistanceTraceMeta, setRouteDistanceTraceMeta] = useState(null);
   const [routeDistanceTraceLoading, setRouteDistanceTraceLoading] = useState(false);
   const [routeActiveFault, setRouteActiveFault] = useState(null);
+  const [routeReferencePdfDownloading, setRouteReferencePdfDownloading] = useState(false);
   const [selectedTopologyRtuId, setSelectedTopologyRtuId] = useState('');
+
+  // Lock page scroll while the route history modal is open.
+  useEffect(() => {
+    if (!selectedRouteHistory) {
+      return undefined;
+    }
+
+    const { body, documentElement } = document;
+    const previousBodyOverflow = body.style.overflow;
+    const previousBodyPaddingRight = body.style.paddingRight;
+    const previousHtmlOverflow = documentElement.style.overflow;
+    const scrollbarWidth = window.innerWidth - documentElement.clientWidth;
+
+    documentElement.style.overflow = 'hidden';
+    body.style.overflow = 'hidden';
+
+    if (scrollbarWidth > 0) {
+      body.style.paddingRight = `${scrollbarWidth}px`;
+    }
+
+    return () => {
+      documentElement.style.overflow = previousHtmlOverflow;
+      body.style.overflow = previousBodyOverflow;
+      body.style.paddingRight = previousBodyPaddingRight;
+    };
+  }, [selectedRouteHistory]);
 
   useEffect(() => {
     loadInitialData();
@@ -409,6 +459,7 @@ function Dashboard({ activeView, setActiveView }) {
     setRouteDistanceTracePoints([]);
     setRouteDistanceTraceMeta(null);
     setRouteActiveFault(null);
+    setRouteReferencePdfDownloading(false);
 
     try {
       const [testsResponse, distanceProfile] = await Promise.all([
@@ -441,6 +492,46 @@ function Dashboard({ activeView, setActiveView }) {
     setRouteDistanceTraceMeta(null);
     setRouteDistanceTraceLoading(false);
     setRouteActiveFault(null);
+    setRouteReferencePdfDownloading(false);
+  };
+
+  const handleDownloadReferencePdf = async () => {
+    if (!selectedRouteHistory?.rtuId || !selectedRouteHistory?.routeId) {
+      return;
+    }
+
+    setRouteReferencePdfDownloading(true);
+
+    try {
+      const response = await rtusAPI.downloadRouteReferencePdf(
+        selectedRouteHistory.rtuId,
+        selectedRouteHistory.routeId
+      );
+
+      const fallbackFileName = `${selectedRouteHistory.routeId}.pdf`;
+      const fileName = extractFilenameFromHeader(
+        response?.headers?.['content-disposition'],
+        fallbackFileName
+      );
+
+      const pdfBlob = response?.data instanceof Blob
+        ? response.data
+        : new Blob([response?.data], { type: 'application/pdf' });
+
+      const downloadUrl = window.URL.createObjectURL(pdfBlob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (error) {
+      console.error(`Error downloading reference PDF for route ${selectedRouteHistory.routeId}:`, error);
+      window.alert('Reference PDF is not available for this route yet.');
+    } finally {
+      setRouteReferencePdfDownloading(false);
+    }
   };
 
   useEffect(() => {
@@ -478,7 +569,7 @@ function Dashboard({ activeView, setActiveView }) {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white">
+      <div className="flex min-h-[55vh] items-center justify-center bg-white">
         <div className="text-center">
           <div className="mx-auto mb-5 flex w-20 items-center justify-between">
             <span className="h-3 w-3 rounded-full bg-blue-600 animate-pulse" style={{ animationDelay: '0ms' }} />
@@ -582,10 +673,6 @@ function Dashboard({ activeView, setActiveView }) {
       fiberLengthKm: route?.fiberSpec?.lengthKm,
       activeAlarms: route?.currentCondition?.activeAlarms ?? 0,
     }));
-  const latestRtuHealthMeasuredAt = parseTimestamp(selectedRtuHealth?.measuredAt);
-  const latestRtuHealthMeasuredAtText = latestRtuHealthMeasuredAt
-    ? latestRtuHealthMeasuredAt.toLocaleString()
-    : 'No telemetry yet';
   const powerSupplyState = selectedRtuHealth?.powerSupplyStatus || null;
   const powerSupplyIsNormal = typeof powerSupplyState === 'string'
     ? powerSupplyState.toUpperCase() === 'NORMAL'
@@ -670,7 +757,7 @@ function Dashboard({ activeView, setActiveView }) {
       ? aggregateRouteHistorySeries(routeHistorySeriesSource, 'monthKey')
       : routeHistorySeriesSource.map((sample) => ({
           index: sample.sampleIndex,
-          label: sample.timeLabel,
+          label: sample.sampleIndex,
           timestampText: sample.timestampText,
           power: sample.power,
           variation: sample.variation,
@@ -688,9 +775,9 @@ function Dashboard({ activeView, setActiveView }) {
   });
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="w-full bg-white">
       <div className="space-y-6 px-3 py-4 sm:px-5 lg:px-8">
-        <div className="card relative overflow-hidden bg-white text-slate-900 shadow-2xl">
+        <div className="card relative overflow-hidden bg-gradient-to-r from-slate-900 via-blue-900 to-cyan-900 text-white shadow-2xl">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-3xl font-bold flex items-center space-x-3">
@@ -780,7 +867,7 @@ function Dashboard({ activeView, setActiveView }) {
                         type="button"
                         key={route.routeId}
                         onClick={() => openRouteHistory(route)}
-                        className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-indigo-50 p-4 shadow-sm text-left transition-all hover:shadow-md hover:border-indigo-300"
+                        className="rounded-xl border-2 border-slate-300 bg-white p-4 shadow-md text-left transition-all hover:shadow-lg hover:border-indigo-500"
                       >
                         <div className="flex items-start justify-between mb-2">
                           <div className="flex-1">
@@ -791,10 +878,10 @@ function Dashboard({ activeView, setActiveView }) {
                         </div>
 
                         <div className="mt-3 flex items-center justify-between gap-2">
-                          <span className="inline-flex rounded-full bg-slate-900/5 px-2.5 py-1 text-xs font-medium text-slate-700">
+                          <span className="inline-flex rounded-full bg-slate-200 px-2.5 py-1 text-xs font-medium text-slate-800">
                             Status: {route.status}
                           </span>
-                          <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-semibold text-indigo-700">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-indigo-600 px-2.5 py-1 text-xs font-semibold text-white">
                             <History className="w-3 h-3" /> History
                           </span>
                         </div>
@@ -805,8 +892,11 @@ function Dashboard({ activeView, setActiveView }) {
               )}
             </div>
 
-            {selectedRouteHistory && (
-              <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+            {selectedRouteHistory && createPortal(
+              <div
+                style={{ position: 'fixed', inset: 0, zIndex: 2147483647 }}
+                className="bg-slate-900/55 backdrop-blur-sm flex items-center justify-center p-4 overscroll-contain"
+              >
                 <div className="w-full max-w-6xl max-h-[85vh] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
                   <div className="border-b border-slate-200 px-5 py-4 flex items-center justify-between">
                     <div>
@@ -823,33 +913,35 @@ function Dashboard({ activeView, setActiveView }) {
                     </button>
                   </div>
 
-                  <div className="px-5 py-4 overflow-auto max-h-[70vh]">
+                  <div className="px-5 py-4 max-h-[70vh] overflow-y-auto overscroll-contain">
                     {routeHistoryLoading ? (
                       <p className="text-sm text-slate-600">Loading route history...</p>
                     ) : (
                       <div className="space-y-6">
                         <div className="rounded-xl border border-cyan-100 bg-cyan-50/35 p-4">
                           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                            <h5 className="text-sm font-bold text-cyan-900">Power vs Distance (trace.dat reference)</h5>
+                            <h5 className="text-sm font-bold text-cyan-900">OTDR Reference Trace (Optical Power vs Distance)</h5>
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="rounded-full bg-cyan-100 px-2.5 py-1 text-xs font-semibold text-cyan-800">
-                                {routeDistanceTraceMeta?.pointCount ?? 0} points
-                              </span>
-                              <span
-                                className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                                  hasRouteDistanceFaultEffect
-                                    ? 'bg-red-100 text-red-700'
-                                    : 'bg-emerald-100 text-emerald-700'
-                                }`}
-                              >
-                                {hasRouteDistanceFaultEffect ? 'Fault profile active' : 'Reference profile'}
-                              </span>
+                              <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold leading-none text-emerald-700">
+                                <span className="leading-none">Reference profile</span>
+                                <button
+                                  type="button"
+                                  onClick={handleDownloadReferencePdf}
+                                  disabled={routeReferencePdfDownloading}
+                                  title="Download reference PDF"
+                                  aria-label="Download reference PDF"
+                                  className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-200/80 text-black transition-colors hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-70"
+                                >
+                                  <Download className="h-3.5 w-3.5 text-black" />
+                                </button>
+                              </div>
+                              {hasRouteDistanceFaultEffect && (
+                                <span className="inline-flex items-center rounded-full bg-red-100 px-2.5 py-1 text-xs font-semibold text-red-700">
+                                  Active alarm on route
+                                </span>
+                              )}
                             </div>
                           </div>
-
-                          <p className="mb-3 text-xs text-slate-600">
-                            File: {routeDistanceTraceMeta?.measurementReferenceFile || 'trace.dat not found for this route'}
-                          </p>
 
                           {routeDistanceTraceLoading ? (
                             <p className="text-sm text-slate-600">Loading distance profile...</p>
@@ -918,11 +1010,11 @@ function Dashboard({ activeView, setActiveView }) {
 
                           {hasRouteDistanceFaultEffect ? (
                             <p className="mt-3 text-xs text-red-700">
-                              Active alarm {routeActiveFault?.status || ''}: points after {Number(routeActiveFault.faultDistanceKm).toFixed(2)} km are reduced by {Number(routeActiveFault.attenuationDb).toFixed(2)} dB.
+                              There is an active alarm on this route.
                             </p>
                           ) : (
                             <p className="mt-3 text-xs text-emerald-700">
-                              No active route fault. Displaying pure trace.dat reference profile.
+                              No active route fault.
                             </p>
                           )}
                         </div>
@@ -1042,7 +1134,8 @@ function Dashboard({ activeView, setActiveView }) {
                     )}
                   </div>
                 </div>
-              </div>
+              </div>,
+              document.body
             )}
 
             <div className="card shadow-lg">
@@ -1084,7 +1177,7 @@ function Dashboard({ activeView, setActiveView }) {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
               <RtuHealthGaugeCard
                 title="Temperature"
                 value={selectedRtuHealth?.temperatureC}
@@ -1112,33 +1205,21 @@ function Dashboard({ activeView, setActiveView }) {
                 loading={selectedRtuHealthLoading}
                 palette="violet"
               />
-            </div>
 
-            <div
-              className={`rounded-3xl border-2 border-slate-900/90 p-5 shadow-[0_14px_35px_-22px_rgba(15,23,42,0.7)] bg-gradient-to-br ${
-                powerSupplyIsNormal
-                  ? 'from-emerald-50 via-white to-emerald-100'
-                  : 'from-rose-50 via-white to-rose-100'
-              }`}
-            >
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Power Supply</p>
-                  <p className={`mt-1 text-3xl font-bold ${powerSupplyIsNormal ? 'text-emerald-700' : 'text-rose-700'}`}>
-                    {selectedRtuHealthLoading ? 'Loading...' : (powerSupplyState || 'N/A')}
-                  </p>
-                  <p className="mt-2 text-sm text-slate-600">
-                    RTU {selectedRtuId || '-'}
-                  </p>
-                </div>
-
-                <div className="rounded-2xl border border-white/70 bg-white/70 px-4 py-3 shadow-inner">
-                  <div className="flex items-center gap-2">
-                    <span className={`h-3 w-3 rounded-full ${powerSupplyIsNormal ? 'bg-emerald-500' : 'bg-rose-500'} animate-pulse`} />
-                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">Live status</span>
+              <div
+                className={`rounded-3xl border-2 border-slate-900/90 p-5 shadow-[0_14px_35px_-22px_rgba(15,23,42,0.7)] bg-gradient-to-br ${
+                  powerSupplyIsNormal
+                    ? 'from-emerald-50 via-white to-emerald-100'
+                    : 'from-rose-50 via-white to-rose-100'
+                }`}
+              >
+                <div className="flex h-full flex-col">
+                  <p className="text-left text-sm font-semibold text-slate-600">Power Supply</p>
+                  <div className="flex flex-1 items-center justify-center">
+                    <p className={`text-center text-3xl font-bold ${powerSupplyIsNormal ? 'text-emerald-700' : 'text-rose-700'}`}>
+                      {selectedRtuHealthLoading ? 'Loading...' : (powerSupplyState || 'N/A')}
+                    </p>
                   </div>
-                  <p className="mt-2 text-xs text-slate-500">Last sample: {latestRtuHealthMeasuredAtText}</p>
-                  <p className="mt-1 text-xs text-slate-500">Source route: {selectedRtuHealth?.routeId || '-'}</p>
                 </div>
               </div>
             </div>
