@@ -45,7 +45,7 @@ function KpiCard({
 
   return (
     <div className={clsx(
-      'relative overflow-hidden rounded-3xl border border-slate-200/80 bg-gradient-to-br shadow-lg shadow-slate-200/70',
+      'relative overflow-hidden rounded-3xl border border-slate-200/80 bg-gradient-to-br shadow-2xl shadow-slate-400/45',
       compact ? 'p-4' : 'p-5',
       tone.surface
     )}>

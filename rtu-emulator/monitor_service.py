@@ -245,7 +245,7 @@ class MonitorService:
                 baseline_power = self.last_normal_power_db.get(route_id)
                 if baseline_power is not None:
                     fixed_fault_power_db = round(
-                        max(0.0, baseline_power - manual_fault_state.attenuation_db),
+                        baseline_power + manual_fault_state.attenuation_db,
                         3,
                     )
 

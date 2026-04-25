@@ -430,14 +430,18 @@ public class AlarmService {
                 .map(Route::getCurrentCondition)
                 .map(Route.CurrentCondition::getWavelengthNm)
                 .orElse(1550);
-        Double baselineAveragePowerDb = routeRepository.findByRouteId(alarm.getRouteId())
+        Double baselinePowerBudgetDb = routeRepository.findByRouteId(alarm.getRouteId())
                 .map(Route::getCurrentCondition)
                 .map(Route.CurrentCondition::getAveragePowerDb)
                 .orElse(null);
 
-        Double averagePowerDb = null;
-        if (baselineAveragePowerDb != null && attenuationDb != null) {
-            averagePowerDb = Math.max(0.0, baselineAveragePowerDb - attenuationDb);
+        Double powerBudgetDb = null;
+        if (baselinePowerBudgetDb != null && attenuationDb != null) {
+            powerBudgetDb = baselinePowerBudgetDb + attenuationDb;
+        } else if (baselinePowerBudgetDb != null) {
+            powerBudgetDb = baselinePowerBudgetDb;
+        } else if (attenuationDb != null) {
+            powerBudgetDb = attenuationDb;
         }
 
         OtdrTestResult result = OtdrTestResult.builder()
@@ -448,11 +452,11 @@ public class AlarmService {
                 .dynamicRangeDb(40.0)
                 .wavelengthNm(routeWavelengthNm)
                 .testResult("Fail")
-                .totalLossDb(request.getAttenuationDb())
+                .totalLossDb(powerBudgetDb)
                 .eventCount(1)
                 .faultDistanceKm(request.getFaultLocationKm())
                 .status(status)
-                .averagePowerDb(averagePowerDb)
+                .averagePowerDb(powerBudgetDb)
                 .powerVariationDb(attenuationDb)
                 .measuredAt(measuredAt)
                 .build();

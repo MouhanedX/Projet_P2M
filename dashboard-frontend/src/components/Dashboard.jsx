@@ -68,6 +68,66 @@ const extractAlarmCreatedAt = (alarm) => parseTimestamp(
   || alarm?.updated_at
 );
 
+const extractAlarmResolvedAt = (alarm) => parseTimestamp(
+  alarm?.lifecycle?.resolvedAt
+  || alarm?.lifecycle?.resolved_at
+  || alarm?.resolvedAt
+  || alarm?.resolved_at
+);
+
+const ACTIVE_ALARM_STATUSES = new Set(['ACTIVE', 'ACKNOWLEDGED']);
+
+const isActiveAlarm = (alarm) => ACTIVE_ALARM_STATUSES.has(String(alarm?.status || '').toUpperCase());
+
+const calculateMttrHoursFromAlarms = (alarmHistory = [], sinceDate) => {
+  const validDurationsSeconds = (Array.isArray(alarmHistory) ? alarmHistory : [])
+    .map((alarm) => {
+      const createdAt = extractAlarmCreatedAt(alarm);
+      const resolvedAt = extractAlarmResolvedAt(alarm);
+
+      if (!createdAt || !resolvedAt || (sinceDate && resolvedAt < sinceDate)) {
+        return null;
+      }
+
+      const durationSeconds = (resolvedAt.getTime() - createdAt.getTime()) / 1000;
+      return durationSeconds >= 0 ? durationSeconds : null;
+    })
+    .filter((durationSeconds) => Number.isFinite(durationSeconds));
+
+  if (validDurationsSeconds.length === 0) {
+    return 0;
+  }
+
+  const averageSeconds = validDurationsSeconds.reduce((sum, value) => sum + value, 0) / validDurationsSeconds.length;
+  return Math.round((averageSeconds / 3600) * 100) / 100;
+};
+
+const calculateMtbfHoursFromAlarms = (alarmHistory = [], sinceDate) => {
+  const incidentTimes = (Array.isArray(alarmHistory) ? alarmHistory : [])
+    .filter((alarm) => {
+      const createdAt = extractAlarmCreatedAt(alarm);
+      const severity = String(alarm?.severity || '').toUpperCase();
+      return !!createdAt
+        && (!sinceDate || createdAt >= sinceDate)
+        && (severity === 'CRITICAL' || severity === 'HIGH');
+    })
+    .map((alarm) => extractAlarmCreatedAt(alarm)?.getTime() || 0)
+    .filter((timeMs) => timeMs > 0)
+    .sort((left, right) => left - right);
+
+  if (incidentTimes.length < 2) {
+    return 720;
+  }
+
+  let totalGapSeconds = 0;
+  for (let index = 1; index < incidentTimes.length; index += 1) {
+    totalGapSeconds += Math.max(0, (incidentTimes[index] - incidentTimes[index - 1]) / 1000);
+  }
+
+  const averageGapHours = (totalGapSeconds / (incidentTimes.length - 1)) / 3600;
+  return Math.round(averageGapHours * 100) / 100;
+};
+
 const toDateKey = (date) => {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
     return '';
@@ -215,6 +275,15 @@ const toFiniteNumber = (value) => {
   return Number.isFinite(numericValue) ? numericValue : null;
 };
 
+const resolvePowerBudgetDb = (test) => {
+  const averagePowerValue = toFiniteNumber(test?.averagePowerDb);
+  if (averagePowerValue !== null) {
+    return averagePowerValue;
+  }
+
+  return toFiniteNumber(test?.totalLossDb);
+};
+
 const extractActiveRouteFault = (routeAlarms) => {
   const activeCandidates = (Array.isArray(routeAlarms) ? routeAlarms : [])
     .filter((alarm) => ['ACTIVE', 'ACKNOWLEDGED'].includes(String(alarm?.status || '').toUpperCase()));
@@ -294,7 +363,7 @@ const buildDistanceProfileSeries = (referencePoints, activeFault) => {
     .filter(Boolean);
 };
 
-const AvailabilityGaugeCard = ({ availabilityPercent, trend }) => {
+const AvailabilityGaugeCard = ({ title = 'Network Availability', availabilityPercent, trend }) => {
   const availability = Number.isFinite(availabilityPercent)
     ? Math.max(0, Math.min(availabilityPercent, 100))
     : 0;
@@ -318,7 +387,7 @@ const AvailabilityGaugeCard = ({ availabilityPercent, trend }) => {
   const tooltipY = Math.max(8, Math.min(62, needleTip.y - 34));
 
   return (
-    <div className="relative h-full overflow-hidden rounded-3xl border border-slate-200/80 bg-gradient-to-br from-blue-50/80 via-white to-indigo-50/70 p-5 shadow-lg shadow-slate-200/70">
+    <div className="relative h-full overflow-hidden rounded-3xl border border-slate-200/80 bg-gradient-to-br from-blue-50/80 via-white to-indigo-50/70 p-5 shadow-2xl shadow-slate-400/45">
       <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-blue-300/20 blur-2xl" />
       <div className="pointer-events-none absolute -left-8 -bottom-8 h-24 w-24 rounded-full bg-white/40 blur-2xl" />
 
@@ -328,7 +397,7 @@ const AvailabilityGaugeCard = ({ availabilityPercent, trend }) => {
 
       <div className="relative flex h-full min-h-[170px] flex-col">
         <div className="pr-16">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Network Availability</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{title}</p>
         </div>
 
         <div className="mt-1 flex flex-1 flex-col items-center justify-center text-center">
@@ -456,7 +525,7 @@ const ReliabilityKpiCard = ({
     : valueHours.toFixed(1);
 
   return (
-    <div className={`relative h-full overflow-hidden rounded-3xl border border-slate-200/80 bg-gradient-to-br ${surfaceClass} p-5 shadow-lg shadow-slate-200/70`}>
+    <div className={`relative h-full overflow-hidden rounded-3xl border border-slate-200/80 bg-gradient-to-br ${surfaceClass} p-5 shadow-2xl shadow-slate-400/45`}>
       <div className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-cyan-300/25 blur-2xl" />
       <div className="pointer-events-none absolute -left-10 -bottom-10 h-28 w-28 rounded-full bg-rose-200/20 blur-2xl" />
 
@@ -1033,8 +1102,9 @@ function Dashboard({ activeView, setActiveView }) {
   const totalTopologyRoutes = topologyRouteSource.length;
   const selectedTopologyRtu = topologyRtus.find((rtu) => rtu.id === selectedTopologyRtuId) || topologyRtus[0] || null;
   const selectedTopologyRoutes = selectedTopologyRtu?.routes || [];
-  const selectedRtuRoutes = routes
-    .filter((route) => route.rtuId === selectedRtuId)
+  const selectedRtuRoutesRaw = routes
+    .filter((route) => route.rtuId === selectedRtuId);
+  const selectedRtuRoutes = selectedRtuRoutesRaw
     .map((route) => ({
       routeId: route.routeId,
       status: route.status,
@@ -1067,6 +1137,7 @@ function Dashboard({ activeView, setActiveView }) {
       const year = measuredAt ? measuredAt.getFullYear() : null;
       const month = measuredAt ? String(measuredAt.getMonth() + 1).padStart(2, '0') : null;
       const day = measuredAt ? String(measuredAt.getDate()).padStart(2, '0') : null;
+      const powerBudgetDb = resolvePowerBudgetDb(test);
 
       return {
         sampleIndex: index + 1,
@@ -1077,7 +1148,7 @@ function Dashboard({ activeView, setActiveView }) {
           : `T${index + 1}`,
         dayKey: measuredAt ? `${year}-${month}-${day}` : `day-${index + 1}`,
         monthKey: measuredAt ? `${year}-${month}` : `month-${index + 1}`,
-        power: typeof test.averagePowerDb === 'number' ? Number(test.averagePowerDb.toFixed(3)) : null,
+        power: powerBudgetDb !== null ? Number(powerBudgetDb.toFixed(3)) : null,
         variation: typeof test.powerVariationDb === 'number'
           ? Number(test.powerVariationDb.toFixed(3))
           : null,
@@ -1152,8 +1223,59 @@ function Dashboard({ activeView, setActiveView }) {
     const bTime = parseTimestamp(b.measuredAt)?.getTime() || 0;
     return bTime - aTime;
   });
+
+  const isRtuView = activeView === 'rtus';
+
+  const selectedRtuRouteSummary = selectedRtuRoutesRaw.reduce((summary, route) => {
+    const activeAlarmCount = Math.max(0, Math.trunc(toFiniteNumber(route?.currentCondition?.activeAlarms) ?? 0));
+    const routeStatus = normalizeRouteStatus(route?.status);
+    const hasFaultStatus = routeStatus === 'BREAK'
+      || routeStatus === 'BROKEN'
+      || routeStatus === 'FIBER_BREAK'
+      || routeStatus === 'DEGRADATION'
+      || routeStatus === 'DEGRADED'
+      || routeStatus === 'HIGH_LOSS_SPLICE';
+    const isNormalRoute = activeAlarmCount === 0 && !hasFaultStatus;
+
+    return {
+      normalRoutes: summary.normalRoutes + (isNormalRoute ? 1 : 0),
+      activeAlarms: summary.activeAlarms + activeAlarmCount,
+    };
+  }, { normalRoutes: 0, activeAlarms: 0 });
+
+  const selectedRtuAvailabilityPercent = selectedRtuRoutesRaw.length > 0
+    ? Number(((selectedRtuRouteSummary.normalRoutes / selectedRtuRoutesRaw.length) * 100).toFixed(2))
+    : 0;
+
+  const selectedRtuActiveAlarmsFromHistory = selectedRtuAlarmHistory.filter((alarm) => isActiveAlarm(alarm)).length;
+  const selectedRtuCriticalActiveAlarms = selectedRtuAlarmHistory
+    .filter((alarm) => isActiveAlarm(alarm) && String(alarm?.severity || '').toUpperCase() === 'CRITICAL')
+    .length;
+
+  const selectedRtuActiveAlarmsCount = Math.max(
+    selectedRtuRouteSummary.activeAlarms,
+    selectedRtuActiveAlarmsFromHistory,
+  );
+
+  const thirtyDaysAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
+  const selectedRtuMttrHours = calculateMttrHoursFromAlarms(selectedRtuAlarmHistory, thirtyDaysAgo);
+  const selectedRtuMtbfHours = calculateMtbfHoursFromAlarms(selectedRtuAlarmHistory, thirtyDaysAgo);
+
   const mttrHours = toFiniteNumber(kpi?.availability?.mttrHours) ?? 0;
   const mtbfHours = toFiniteNumber(kpi?.availability?.mtbfHours) ?? 0;
+
+  const displayedAvailabilityTitle = isRtuView ? 'RTU Availability' : 'Network Availability';
+  const displayedAvailabilityPercent = isRtuView
+    ? selectedRtuAvailabilityPercent
+    : (kpi?.metrics?.networkAvailabilityPercent || 0);
+  const displayedAvailabilityTrend = isRtuView ? null : kpi?.trend?.hourOverHourChangePercent;
+
+  const displayedActiveAlarms = isRtuView ? selectedRtuActiveAlarmsCount : (kpi?.metrics?.totalAlarmsActive || 0);
+  const displayedCriticalAlarms = isRtuView ? selectedRtuCriticalActiveAlarms : (kpi?.metrics?.criticalAlarms || 0);
+  const displayedTotalRoutes = isRtuView ? selectedRtuRoutesRaw.length : (kpi?.metrics?.totalRoutes || 0);
+  const displayedNormalRoutes = isRtuView ? selectedRtuRouteSummary.normalRoutes : (kpi?.metrics?.routesNormal || 0);
+  const displayedMttrHours = isRtuView ? selectedRtuMttrHours : mttrHours;
+  const displayedMtbfHours = isRtuView ? selectedRtuMtbfHours : mtbfHours;
 
   return (
     <div className="w-full bg-transparent">
@@ -1171,25 +1293,26 @@ function Dashboard({ activeView, setActiveView }) {
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 items-start">
           <AvailabilityGaugeCard
-            availabilityPercent={kpi?.metrics?.networkAvailabilityPercent || 0}
-            trend={kpi?.trend?.hourOverHourChangePercent}
+            title={displayedAvailabilityTitle}
+            availabilityPercent={displayedAvailabilityPercent}
+            trend={displayedAvailabilityTrend}
           />
 
           <div className="grid grid-cols-1 gap-4">
             <KpiCard
               title="Active Alarms"
-              value={kpi?.metrics?.totalAlarmsActive || 0}
+              value={displayedActiveAlarms}
               icon={<AlertCircle className="w-5 h-5" />}
-              subtitle={`${kpi?.metrics?.criticalAlarms || 0} critical`}
-              color={kpi?.metrics?.criticalAlarms > 0 ? 'red' : 'yellow'}
+              subtitle={`${displayedCriticalAlarms} critical`}
+              color={displayedCriticalAlarms > 0 ? 'red' : 'yellow'}
               isInteger={true}
               compact={true}
             />
             <KpiCard
               title="Total Routes"
-              value={kpi?.metrics?.totalRoutes || 0}
+              value={displayedTotalRoutes}
               icon={<Router className="w-5 h-5" />}
-              subtitle={`${kpi?.metrics?.routesNormal || 0} normal`}
+              subtitle={`${displayedNormalRoutes} normal`}
               color="blue"
               isInteger={true}
               compact={true}
@@ -1198,7 +1321,7 @@ function Dashboard({ activeView, setActiveView }) {
 
           <ReliabilityKpiCard
             title="MTTR"
-            hours={mttrHours}
+            hours={displayedMttrHours}
             targetHours={RELIABILITY_TARGETS.mttrHours}
             lowerIsBetter={true}
             icon={<Clock3 className="h-5 w-5" />}
@@ -1206,7 +1329,7 @@ function Dashboard({ activeView, setActiveView }) {
           />
           <ReliabilityKpiCard
             title="MTBF"
-            hours={mtbfHours}
+            hours={displayedMtbfHours}
             targetHours={RELIABILITY_TARGETS.mtbfHours}
             lowerIsBetter={false}
             icon={<ShieldCheck className="h-5 w-5" />}
@@ -1415,7 +1538,7 @@ function Dashboard({ activeView, setActiveView }) {
 
                         <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-4">
                           <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                            <h5 className="text-sm font-bold text-indigo-900">Power (dB)</h5>
+                            <h5 className="text-sm font-bold text-indigo-900">Power Budget (dB)</h5>
                             <div className="flex items-center gap-2">
                               <label htmlFor="routeHistoryGrouping" className="text-xs font-semibold text-indigo-800">Filter</label>
                               <select
@@ -1433,7 +1556,7 @@ function Dashboard({ activeView, setActiveView }) {
                           </div>
 
                           {routePowerHistoryData.length === 0 ? (
-                            <p className="text-sm text-slate-600">No OTDR power history available for this route yet.</p>
+                            <p className="text-sm text-slate-600">No OTDR power budget history available for this route yet.</p>
                           ) : (
                             <div className="h-64">
                               <ResponsiveContainer width="100%" height="100%">
@@ -1455,9 +1578,9 @@ function Dashboard({ activeView, setActiveView }) {
                                     }}
                                     formatter={(value) => {
                                       if (value === null || value === undefined) {
-                                        return ['N/A', 'Power'];
+                                        return ['N/A', 'Power Budget'];
                                       }
-                                      return [`${Number(value).toFixed(3)} dB`, 'Power'];
+                                      return [`${Number(value).toFixed(3)} dB`, 'Power Budget'];
                                     }}
                                   />
                                   <Line
@@ -1491,7 +1614,7 @@ function Dashboard({ activeView, setActiveView }) {
                                     <th className="px-3 py-2">Time</th>
                                     <th className="px-3 py-2">Mode</th>
                                     <th className="px-3 py-2">Wavelength</th>
-                                    <th className="px-3 py-2">Power</th>
+                                    <th className="px-3 py-2">Power Budget</th>
                                     <th className="px-3 py-2">Variation</th>
                                     <th className="px-3 py-2">Result</th>
                                   </tr>
@@ -1499,13 +1622,14 @@ function Dashboard({ activeView, setActiveView }) {
                                 <tbody>
                                   {routeHistoryTableData.map((test, index) => {
                                     const measuredAt = parseTimestamp(test.measuredAt);
+                                    const powerBudgetDb = resolvePowerBudgetDb(test);
                                     return (
                                       <tr key={test.id || `${selectedRouteHistory.routeId}-${test.measuredAt || index}-${index}`} className="border-t border-slate-100">
                                         <td className="px-3 py-2 text-slate-700">{measuredAt ? measuredAt.toLocaleString() : '-'}</td>
                                         <td className="px-3 py-2 text-slate-600">{test.testMode || '-'}</td>
                                         <td className="px-3 py-2 text-slate-600">{test.wavelengthNm != null ? `${test.wavelengthNm} nm` : '-'}</td>
                                         <td className="px-3 py-2 text-slate-700">
-                                          {typeof test.averagePowerDb === 'number' ? `${Number(test.averagePowerDb).toFixed(3)} dB` : '-'}
+                                          {powerBudgetDb !== null ? `${powerBudgetDb.toFixed(3)} dB` : '-'}
                                         </td>
                                         <td className="px-3 py-2 text-slate-700">
                                           {typeof test.powerVariationDb === 'number' ? `${Number(test.powerVariationDb).toFixed(3)} dB` : '-'}

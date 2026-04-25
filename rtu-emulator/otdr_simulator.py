@@ -15,7 +15,7 @@ class RouteReferenceBundle:
     measurement_file: Path
     events: List[OTDREvent]
     trace_points: List[Tuple[float, float]]
-    baseline_avg_power_db: float
+    reference_power_budget_db: float
 
 
 class OTDRSimulator:
@@ -74,18 +74,18 @@ class OTDRSimulator:
                 self._inject_fault_event(events, effective_distance, fault_type)
 
             total_loss = self._calculate_total_loss(effective_distance, events)
-            average_power_db, variation_db = self._next_average_power(route_id, reference.baseline_avg_power_db)
+            power_budget_db, variation_db = self._next_power_budget(route_id, reference.reference_power_budget_db)
 
             if inject_fault:
                 if fixed_fault_power_db is not None:
-                    average_power_db = fixed_fault_power_db
+                    power_budget_db = fixed_fault_power_db
                 else:
                     penalty_db = (
                         fault_power_penalty_db
                         if fault_power_penalty_db is not None
                         else self._fault_power_penalty(fault_type)
                     )
-                    average_power_db -= penalty_db
+                    power_budget_db += penalty_db
                 status = self._determine_status(total_loss, events)
             else:
                 status = TraceStatus.NORMAL
@@ -101,7 +101,7 @@ class OTDRSimulator:
                 measurement_duration_ms=random.randint(800, 1200),
                 event_reference_file=reference.event_file.name,
                 measurement_reference_file=reference.measurement_file.name,
-                average_power_db=round(average_power_db, 3),
+                average_power_db=round(power_budget_db, 3),
                 power_variation_db=round(variation_db, 3),
                 rtu_health=self._generate_rtu_health(),
             )
@@ -116,19 +116,19 @@ class OTDRSimulator:
         splice_count = max(3, int(distance_km / 6))
         events = self._generate_events(distance_km, splice_count, inject_fault, fault_type)
         total_loss = self._calculate_total_loss(distance_km, events)
-        baseline_power = max(20.0, 42.0 - (distance_km * 0.08))
-        average_power_db, variation_db = self._next_average_power(route_id, baseline_power)
+        baseline_power_budget_db = max(0.5, (distance_km * self.attenuation) + (splice_count * 0.08))
+        power_budget_db, variation_db = self._next_power_budget(route_id, baseline_power_budget_db)
 
         if inject_fault:
             if fixed_fault_power_db is not None:
-                average_power_db = fixed_fault_power_db
+                power_budget_db = fixed_fault_power_db
             else:
                 penalty_db = (
                     fault_power_penalty_db
                     if fault_power_penalty_db is not None
                     else self._fault_power_penalty(fault_type)
                 )
-                average_power_db -= penalty_db
+                power_budget_db += penalty_db
             status = self._determine_status(total_loss, events)
         else:
             status = TraceStatus.NORMAL
@@ -142,7 +142,7 @@ class OTDRSimulator:
             events=events,
             status=status,
             measurement_duration_ms=random.randint(800, 1200),
-            average_power_db=round(average_power_db, 3),
+            average_power_db=round(power_budget_db, 3),
             power_variation_db=round(variation_db, 3),
             rtu_health=self._generate_rtu_health(),
         )
@@ -218,23 +218,39 @@ class OTDRSimulator:
             event_json = json.loads(event_file.read_text(encoding="utf-8"))
             events = self._parse_events(event_json)
             trace_points = self._parse_trace_points(measurement_file)
-
-            if trace_points:
-                baseline_avg_power_db = sum(point[1] for point in trace_points) / len(trace_points)
-            else:
-                baseline_avg_power_db = 35.0
+            reference_power_budget_db = self._extract_reference_power_budget(event_json, trace_points)
 
             bundle = RouteReferenceBundle(
                 event_file=event_file,
                 measurement_file=measurement_file,
                 events=events,
                 trace_points=trace_points,
-                baseline_avg_power_db=baseline_avg_power_db,
+                reference_power_budget_db=reference_power_budget_db,
             )
             self.reference_cache[normalized_route_id] = bundle
             return bundle
         except Exception:
             return None
+
+    def _extract_reference_power_budget(
+        self,
+        event_json: dict,
+        trace_points: List[Tuple[float, float]],
+    ) -> float:
+        key_events = event_json.get("KeyEvents") or {}
+        summary = key_events.get("Summary") or key_events.get("summary") or event_json.get("Summary") or {}
+
+        candidate_keys = ["total loss", "total_loss", "totalLoss", "totalLossDb"]
+        for key in candidate_keys:
+            value = self._safe_float(summary.get(key))
+            if value is not None:
+                return max(0.0, value)
+
+        if trace_points:
+            max_distance = max(point[0] for point in trace_points)
+            return max(0.0, max_distance * self.attenuation)
+
+        return 0.0
 
     def get_reference_trace_profile(self, route_id: str, max_points: int = 1200) -> dict:
         normalized_route_id = self._normalize_route_id(route_id)
@@ -379,7 +395,7 @@ class OTDRSimulator:
 
         return random.uniform(float(settings.min_fiber_length), float(settings.max_fiber_length))
 
-    def _next_average_power(self, route_id: str, baseline_power_db: float) -> Tuple[float, float]:
+    def _next_power_budget(self, route_id: str, baseline_power_budget_db: float) -> Tuple[float, float]:
         min_variation = min(settings.power_variation_min_db, settings.power_variation_max_db)
         max_variation = max(settings.power_variation_min_db, settings.power_variation_max_db)
 
@@ -388,7 +404,7 @@ class OTDRSimulator:
         direction = random.choice([-1.0, 1.0])
         current_offset_db = direction * variation_db
 
-        return baseline_power_db + current_offset_db, variation_db
+        return max(0.0, baseline_power_budget_db + current_offset_db), variation_db
 
     def _inject_fault_event(self, events: List[OTDREvent], fiber_length: float, fault_type: str):
         fault_distance = random.uniform(max(0.2, fiber_length * 0.2), max(0.3, fiber_length * 0.9))
